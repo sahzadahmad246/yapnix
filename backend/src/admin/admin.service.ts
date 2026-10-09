@@ -1,0 +1,162 @@
+import { BadRequestException, ConflictException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { MediaService } from '../media/media.service.js';
+import { publicationIssues, type LevelContent } from './readiness.js';
+import { SupabaseService } from '../supabase/supabase.service.js';
+import type {
+  CreateGameDto,
+  CreateLevelDto,
+  CreateQuestionDto,
+  SetLevelQuestionsDto,
+  UpdateGameDto,
+  UpdateLevelDto,
+  UpdateQuestionDto,
+} from './admin.dto.js';
+
+@Injectable()
+export class AdminService {
+  constructor(private readonly supabase: SupabaseService, private readonly media: MediaService) {}
+
+  private fail(error: { code?: string; message?: string }, fallback: string): never {
+    if (error.code === 'P0002') throw new NotFoundException('Content not found');
+    if (error.code === 'YP001') throw new BadRequestException(error.message);
+    if (error.code === '23505') throw new ConflictException('This slug, name or assignment already exists');
+    if (error.code === '23503') throw new BadRequestException('The selected game or question no longer exists');
+    throw new InternalServerErrorException(fallback);
+  }
+
+  async getOverview() {
+    const client = this.supabase.adminClient;
+    const [games, levels, questions, recentLevels] = await Promise.all([
+      client.from('games').select('id', { count: 'exact', head: true }),
+      client.from('levels').select('id', { count: 'exact', head: true }),
+      client.from('questions').select('id', { count: 'exact', head: true }),
+      client
+        .from('levels')
+        .select('id,name,is_published,updated_at')
+        .order('updated_at', { ascending: false })
+        .limit(5),
+    ]);
+
+    if (games.error || levels.error || questions.error || recentLevels.error) {
+      throw new InternalServerErrorException('Unable to load dashboard overview');
+    }
+
+    return {
+      games: games.count ?? 0,
+      levels: levels.count ?? 0,
+      questions: questions.count ?? 0,
+      recentlyEditedLevels: recentLevels.data,
+    };
+  }
+
+  async listGames() {
+    const { data, error } = await this.supabase.adminClient
+      .from('games')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw new InternalServerErrorException('Unable to load games');
+    return data;
+  }
+
+  async createGame(input: CreateGameDto) {
+    const { data, error } = await this.supabase.adminClient
+      .from('games')
+      .insert(input)
+      .select()
+      .single();
+
+    if (error) this.fail(error, 'Unable to create game');
+    return data;
+  }
+
+  async updateGame(id: string, input: UpdateGameDto) {
+    const { data, error } = await this.supabase.adminClient
+      .from('games')
+      .update(input)
+      .eq('id', id)
+      .select()
+      .maybeSingle();
+
+    if (error) this.fail(error, 'Unable to update game');
+    if (!data) throw new NotFoundException('Game not found');
+    return data;
+  }
+
+  async listLevels() {
+    const { data, error } = await this.supabase.adminClient
+      .from('levels')
+      .select('*,games(name,slug),level_questions(question_id,order_index,questions(id,is_active,image_storage_path,primary_answer))')
+      .order('updated_at', { ascending: false });
+
+    if (error) throw new InternalServerErrorException('Unable to load levels');
+    const { data: images, error: imageError } = await this.supabase.adminClient.from('media_records')
+      .select('storage_path').eq('status', 'ready');
+    if (imageError) throw new InternalServerErrorException('Unable to check level images');
+    const readyImages = new Set((images ?? []).map(image => String(image.storage_path)));
+    return (data ?? []).map(level => ({ ...level, publication_issues: publicationIssues(level as unknown as LevelContent, readyImages) }));
+  }
+
+  async setLevelQuestions(id: string, input: SetLevelQuestionsDto) {
+    const { error } = await this.supabase.adminClient.rpc('set_level_questions', {
+      target_level_id: id,
+      question_ids: input.question_ids,
+    });
+
+    if (error) this.fail(error, 'Unable to assign questions to level');
+    return { level_id: id, question_ids: input.question_ids };
+  }
+
+  async createLevel(input: CreateLevelDto) {
+    const { data, error } = await this.supabase.adminClient
+      .from('levels')
+      .insert(input)
+      .select()
+      .single();
+
+    if (error) this.fail(error, 'Unable to create level');
+    return data;
+  }
+
+  async updateLevel(id: string, input: UpdateLevelDto) {
+    const { data, error } = await this.supabase.adminClient
+      .from('levels')
+      .update(input)
+      .eq('id', id)
+      .select()
+      .maybeSingle();
+
+    if (error) this.fail(error, 'Unable to update level');
+    if (!data) throw new NotFoundException('Level not found');
+    return data;
+  }
+
+  async listQuestions() {
+    const { data, error } = await this.supabase.adminClient
+      .from('questions')
+      .select('*,question_answers(id,answer,is_primary),level_questions(level_id,order_index)')
+      .order('updated_at', { ascending: false });
+
+    if (error) throw new InternalServerErrorException('Unable to load questions');
+    return this.media.withImageUrls((data ?? []) as Array<{ image_storage_path: string }>);
+  }
+
+  async createQuestion(input: CreateQuestionDto) {
+    await this.media.assertReadyImage(input.image_storage_path);
+    const { data, error } = await this.supabase.adminClient.rpc('create_question_content', {
+      content: input,
+    });
+    if (error) this.fail(error, 'Unable to create question');
+    return data;
+  }
+
+  async updateQuestion(id: string, input: UpdateQuestionDto) {
+    if (input.image_storage_path !== undefined) await this.media.assertReadyImage(input.image_storage_path);
+    const { data, error } = await this.supabase.adminClient.rpc('update_question_content', {
+      target_question_id: id,
+      changes: input,
+    });
+    if (error) this.fail(error, 'Unable to update question');
+    return data;
+  }
+}

@@ -1,0 +1,46 @@
+# Local environment files
+.env
+.env.local
+.env.*.local
+.env.*
+!.env.example
+!.env.*.example
+
+# Dependencies and build artifacts
+node_modules/
+.next/
+dist/
+coverage/
+.gradle/
+android/.gradle/
+android/local.properties
+android/app/build/
+.kotlin/
+*.tsbuildinfo
+
+# Local signing material and agent/account state
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+.codex/
+.agents/
+.aws/
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Application data
+*.log
+*.sqlite
+*.db
+
+# Supabase local artifacts
+supabase/.env

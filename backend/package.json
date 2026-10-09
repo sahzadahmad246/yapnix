@@ -1,0 +1,39 @@
+{
+  "name": "@yapnix/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nest start --watch",
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "vitest run src --maxWorkers=1 --no-file-parallelism",
+    "test:integration": "npm run build && node --test --test-concurrency=1 test/*.test.mjs",
+    "lint": "eslint . --ext .ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/config": "^4.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/platform-express": "^11.0.0",
+    "@nestjs/swagger": "^11.0.0",
+    "@supabase/realtime-js": "^2.109.0",
+    "@supabase/supabase-js": "^2.49.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.2",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.0",
+    "sharp": "^0.35.5",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.0",
+    "@nestjs/testing": "^11.0.0",
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.18.2",
+    "eslint": "^9.17.0",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.11"
+  }
+}
