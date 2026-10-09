@@ -13,7 +13,7 @@ Backend `test` runs Vitest unit tests, compiles TypeScript with decorator metada
 
 HTTP coverage includes guest content access, draft parents and levels, invalid IDs, invalid sessions, unapproved administrators, DTO validation, authenticated progress reads, and server-derived ownership of progress writes. Supabase queries are mocked here; this suite does not prove database RLS enforcement.
 
-Admin tests cover initial rendering, approved/unapproved access, create/publish readiness, edit-form defaults, image upload/library reuse/failures, and serialization of content edits. They do not replace browser validation of Google OAuth and the full content-management workflow.
+Admin tests cover initial rendering, approved/unapproved access, create/publish readiness, edit-form defaults, image upload/library reuse/failures, serialization of content edits, form cancellation/Escape and failed-save preservation, and game → level → image/answer creation and assignment. They do not replace browser validation of Google OAuth and the full content-management workflow.
 
 `npm run lint` uses the repository ESLint flat configuration. Run checks sequentially on an 8 GB machine; test workers are limited to one. Studio production builds use one worker and a 1 GB Node heap.
 

@@ -52,7 +52,7 @@ export function ImagePicker({ token, value, imageUrl, disabled, onChange, onBusy
     {working && <p role="status">Loading image…</p>}
     {error && <p className="notice" role="alert">{error}</p>}
     {imageUrl && <img className="image-preview" src={imageUrl} alt="Selected question" />}
-    <input name="image_storage_path" aria-label="Selected image path" readOnly value={value} placeholder="Upload or choose an image" />
+    <input name="image_storage_path" type="hidden" value={value} />
     {showLibrary && <div className="image-library" aria-label="Uploaded images">
       {!images.length && <p>No images yet. Upload your first image above.</p>}
       {images.map(image => <button type="button" key={image.storage_path} disabled={disabled || !image.image_url}

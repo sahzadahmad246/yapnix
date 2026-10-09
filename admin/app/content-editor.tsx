@@ -22,13 +22,14 @@ export function readContentChanges(kind: ContentKind, data: FormData): ContentRo
   };
 }
 
-export function ContentEditor({ kind, row, busy, token, onSave, onCancel }: {
+export function ContentEditor({ kind, row, busy, token, onSave, onCancel, onBusyChange }: {
   kind: ContentKind;
   row: ContentRow;
   busy: boolean;
   token: string;
   onSave: (changes: ContentRow) => Promise<void>;
   onCancel: () => void;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const question = kind === 'questions';
   const [image, setImage] = useState({ storage_path: String(row.image_storage_path ?? ''), image_url: row.image_url as string | null });
@@ -45,15 +46,15 @@ export function ContentEditor({ kind, row, busy, token, onSave, onCancel }: {
   }
   return <section className="form-panel content-editor" aria-label="Edit content">
     <div className="section-heading"><h2>Edit {question ? 'question' : kind === 'games' ? 'game' : 'level'}</h2>
-      <button type="button" className="quiet-button" disabled={busy} onClick={onCancel}>Cancel</button></div>
+      <button type="button" className="quiet-button" disabled={busy || uploading} onClick={onCancel}>Cancel</button></div>
     <form onSubmit={submit}>
-      <fieldset disabled={busy}>
+      <fieldset disabled={busy || uploading}>
         {question ? <>
           <ImagePicker token={token} value={image.storage_path} imageUrl={image.image_url} disabled={busy}
-            onChange={setImage} onBusyChange={setUploading} />
-          {field('Primary answer', 'primary_answer')}
-          <label>Accepted aliases, comma-separated<input name="aliases" defaultValue={aliases} /></label>
-          {field('Language', 'language')}
+            onChange={setImage} onBusyChange={working => { setUploading(working); onBusyChange?.(working); }} />
+          {field('Correct name / answer', 'primary_answer')}
+          <label>Other accepted names<input name="aliases" defaultValue={aliases} /></label>
+          {field('Answer language', 'language')}
           <label className="checkbox-field"><input type="checkbox" name="is_active" defaultChecked={Boolean(row.is_active)} /> Active in gameplay</label>
         </> : <>
           {field('Name', 'name')}
@@ -61,7 +62,7 @@ export function ContentEditor({ kind, row, busy, token, onSave, onCancel }: {
           {field('Description', 'description', false)}
         </>}
         {kind === 'levels' ? <div className="field-pair">
-          {field('Questions', 'question_count', true, 'number', 1)}
+          {field('Number of images', 'question_count', true, 'number', 1, 100)}
           {field('Seconds / question', 'default_time_limit_seconds', true, 'number', 1, 60)}
         </div> : <label>Difficulty<select name="difficulty" defaultValue={String(row.difficulty ?? 1)}>
           {[1, 2, 3, 4, 5].map(value => <option key={value} value={value}>{value}</option>)}
