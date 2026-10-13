@@ -253,5 +253,89 @@ end $$;
 reset role;
 select public.test_assert((select not public from storage.buckets where id = 'content-images'), 'content bucket is private');
 
+-- Upgrade existing content; rerun verifies idempotence and preserved IDs.
+insert into public.games (name, slug) values ('Empty legacy game', 'empty-legacy-game');
+\ir ../migrations/202610130007_game_categories.sql
+\ir ../migrations/202610130007_game_categories.sql
+select public.test_assert((select count(*) = 4 from public.games), 'each legacy level becomes a standalone game');
+select public.test_assert(not exists(select game_id from public.levels group by game_id having count(*) <> 1), 'one private session per game');
+select public.test_assert((select count(*) = 1 from public.levels l join public.games g on g.id=l.game_id where g.slug='empty-legacy-game'), 'migration gives empty legacy games a question configuration');
+select public.test_assert(exists(select 1 from public.player_progress where level_id = '30000000-0000-4000-8000-000000000001'), 'migration keeps saved progress IDs');
+update public.game_categories set is_published = false where slug = 'guess';
+set local role anon;
+select public.test_assert((select count(*) = 0 from public.games), 'unpublished categories hide published games');
+select public.test_assert((select count(*) = 0 from public.levels), 'unpublished categories hide playable sessions');
+select public.test_assert((select count(*) = 0 from public.questions), 'unpublished categories hide questions');
+select public.test_assert((select count(*) = 0 from public.question_answers), 'unpublished categories hide answer aliases');
+reset role;
+update public.game_categories set is_published = true where slug = 'guess';
+set local role service_role;
+select public.test_assert((public.create_standalone_game(jsonb_build_object('name','Foods','slug','foods','difficulty',1,'question_count',5))->>'name') = 'Foods', 'create a standalone game without a level step');
+select public.test_assert((select l.question_count = 5 from public.levels l join public.games g on g.id = l.game_id where g.slug = 'foods'), 'game owns its question configuration');
+do $$ begin
+  begin
+    perform public.update_standalone_game((select id from public.games where slug='foods'), '{"is_published":true}');
+    set constraints all immediate;
+    raise exception 'Incomplete game published';
+  exception when sqlstate 'YP001' then null;
+  end;
+end $$;
+set constraints all deferred;
+select public.set_game_questions((select id from public.games where slug='foods'), array['40000000-0000-4000-8000-000000000001']::uuid[]);
+select public.update_standalone_game((select id from public.games where slug='foods'), '{"question_count":1,"is_published":true}');
+set constraints all immediate;
+select public.test_assert((select g.is_published and l.is_published from public.games g join public.levels l on l.game_id=g.id where g.slug='foods'), 'ready game publishes atomically without a level step');
+select public.update_standalone_game((select id from public.games where slug='foods'), '{"is_published":false}');
+select public.test_assert((select not g.is_published and not l.is_published from public.games g join public.levels l on l.game_id=g.id where g.slug='foods'), 'unpublishing hides the game and its private session together');
+set constraints all deferred;
+reset role;
+
+-- Prompts and safe removal/replacement of published game questions.
+\ir ../migrations/202610130008_game_prompts_and_draft_edits.sql
+\ir ../migrations/202610130008_game_prompts_and_draft_edits.sql
+set local role service_role;
+select public.update_standalone_game((select id from public.games where slug='foods'), '{"prompt_key":"name_food","is_published":true}');
+set constraints all immediate;
+set constraints all deferred;
+select public.set_game_questions((select id from public.games where slug='foods'), array['40000000-0000-4000-8000-000000000001']::uuid[]);
+select public.test_assert((select is_published from public.games where slug='foods'), 'unchanged selection does not unpublish a game');
+do $$ begin
+  begin
+    perform public.set_game_questions((select id from public.games where slug='foods'), array['99999999-0000-4000-8000-000000000001']::uuid[]);
+    raise exception 'Unknown image assignment succeeded';
+  exception when foreign_key_violation then null;
+  end;
+end $$;
+select public.test_assert((select is_published from public.games where slug='foods'), 'failed replacement rolls back publication and assignments');
+select public.set_game_questions((select id from public.games where slug='foods'), '{}'::uuid[]);
+set constraints all immediate;
+select public.test_assert((select not g.is_published and not l.is_published from public.games g join public.levels l on l.game_id=g.id where g.slug='foods'), 'removing the last image safely makes the game a draft');
+select public.test_assert((select count(*)=0 from public.level_questions lq join public.levels l on l.id=lq.level_id join public.games g on g.id=l.game_id where g.slug='foods'), 'last image is actually removed');
+select public.set_game_questions((select id from public.games where slug='foods'), array['40000000-0000-4000-8000-000000000001','40000000-0000-4000-8000-000000000002']::uuid[]);
+select public.test_assert((select question_count=2 from public.levels l join public.games g on g.id=l.game_id where g.slug='foods'), 'saved question count follows the selected images');
+select public.test_assert((select prompt_key='name_food' from public.games where slug='foods'), 'selected game prompt persists');
+do $$ begin
+  begin
+    perform public.update_standalone_game((select id from public.games where slug='foods'), '{"prompt_key":"unsupported"}');
+    raise exception 'Unsupported prompt accepted';
+  exception when check_violation then null;
+  end;
+end $$;
+set constraints all deferred;
+reset role;
+
+-- Deleting a game cascades through levels, assignments and progress, but keeps
+-- the reusable question/answer library intact, including shared questions.
+set local role service_role;
+delete from public.games where id = '20000000-0000-4000-8000-000000000001';
+set constraints all immediate;
+select public.test_assert(not exists(select 1 from public.levels where game_id = '20000000-0000-4000-8000-000000000001'), 'game deletion removes its levels');
+select public.test_assert(not exists(select 1 from public.level_questions where level_id = '30000000-0000-4000-8000-000000000001'), 'game deletion removes its assignments');
+select public.test_assert(not exists(select 1 from public.player_progress where level_id = '30000000-0000-4000-8000-000000000001'), 'game deletion removes saved level progress');
+select public.test_assert(exists(select 1 from public.questions where id = '40000000-0000-4000-8000-000000000001'), 'game deletion preserves reusable questions');
+select public.test_assert(exists(select 1 from public.question_answers where question_id = '40000000-0000-4000-8000-000000000001'), 'game deletion preserves answers');
+select public.test_assert(exists(select 1 from public.games where id = '20000000-0000-4000-8000-000000000002'), 'game deletion preserves other games');
+reset role;
+
 rollback;
 \echo 'Migration, publication RLS, progress ownership and atomic update checks passed; changes rolled back.'

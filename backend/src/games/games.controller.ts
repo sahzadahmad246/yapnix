@@ -12,6 +12,11 @@ export class GamesController {
     return this.gamesService.listPublishedGames();
   }
 
+  @Get(':id/play')
+  getPlayableGame(@Param('id', new ParseUUIDPipe()) gameId: string) {
+    return this.gamesService.getPlayableGame(gameId);
+  }
+
   @Get(':id/levels')
   async listPublishedLevels(@Param('id', new ParseUUIDPipe()) gameId: string) {
     return this.gamesService.listPublishedLevels(gameId);

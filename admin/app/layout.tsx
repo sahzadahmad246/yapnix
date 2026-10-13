@@ -10,7 +10,8 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      {/* Browser extensions may add attributes directly to body before React hydrates. */}
+      <body suppressHydrationWarning>{children}</body>
     </html>
   );
 }

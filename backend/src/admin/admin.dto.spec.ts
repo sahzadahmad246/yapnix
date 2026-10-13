@@ -1,7 +1,7 @@
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { describe, expect, it } from 'vitest';
-import { CreateGameDto, CreateQuestionDto } from './admin.dto.js';
+import { CreateGameDto, CreateQuestionDto, UpdateGameDto } from './admin.dto.js';
 
 describe('admin request validation', () => {
   it('rejects game difficulty outside the supported range', async () => {
@@ -28,4 +28,9 @@ describe('admin request validation', () => {
 
     expect(errors.map((error) => error.property)).toContain('accepted_answers');
   });
+  it('accepts predefined game prompts and rejects unknown ones', async () => {
+    expect(await validate(plainToInstance(UpdateGameDto, {prompt_key:'guess_animal'}))).toHaveLength(0);
+    expect((await validate(plainToInstance(UpdateGameDto, {prompt_key:'unsupported'}))).map(error=>error.property)).toContain('prompt_key');
+  });
+
 });

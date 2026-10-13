@@ -1,6 +1,6 @@
 # Yapnix
 
-Yapnix is a voice-based social challenge in which players identify an object from an image and speak its name before the countdown expires.
+Yapnix is a collection of speaking games organized as Category → Game → Questions. The first category, Guess, contains standalone games such as Animals, Foods and Everyday Objects: players identify each picture aloud before the countdown expires. There are no levels.
 
 ## Goal
 
@@ -29,7 +29,7 @@ The initial release should be a polished, reliable, expandable Android game. It 
 
 ## Setup
 
-See [`docs/SETUP.md`](docs/SETUP.md) for the initial configuration and deployment checklist.
+Apply the [current content upgrade and workflow](docs/admin-game-workflow.md) for categories and standalone games. See [`docs/SETUP.md`](docs/SETUP.md) for the initial configuration and deployment checklist.
 
 ## Status
 

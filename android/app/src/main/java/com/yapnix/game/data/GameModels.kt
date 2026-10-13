@@ -5,8 +5,14 @@ data class Game(
     val name: String,
     val description: String,
     val difficulty: Int,
+    val categoryId: String = "",
+    val categoryName: String = "Guess",
+    val sessionId: String = "",
+    val questionCount: Int = 5,
+    val timeLimitSeconds: Int = 5,
 )
 
+// One private session configuration per game. The legacy ID preserves saved progress.
 data class Level(
     val id: String,
     val gameId: String,
@@ -27,6 +33,7 @@ data class Question(
 data class PlayableLevel(
     val level: Level,
     val questions: List<Question>,
+    val prompt: String = "What is this?",
 )
 
 data class SavedProgress(

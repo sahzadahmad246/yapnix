@@ -1,5 +1,6 @@
 import {
   Body,
+  Delete,
   Controller,
   Get,
   Param,
@@ -18,6 +19,8 @@ import { AdminRoles } from '../auth/roles.js';
 import { AdminGuard } from '../auth/guards/admin.guard.js';
 import {
   CreateGameDto,
+  CreateCategoryDto,
+  UpdateCategoryDto,
   CreateLevelDto,
   CreateQuestionDto,
   SetLevelQuestionsDto,
@@ -25,6 +28,7 @@ import {
   UpdateLevelDto,
   UpdateQuestionDto,
 } from './admin.dto.js';
+import { gamePromptOptions } from '../games/game-prompts.js';
 import { AdminService } from './admin.service.js';
 
 @ApiTags('admin')
@@ -47,6 +51,25 @@ export class AdminController {
     return this.adminService.getOverview();
   }
 
+  @Get('game-prompts')
+  listGamePrompts() { return gamePromptOptions; }
+
+  @Get('categories')
+  listCategories() { return this.adminService.listCategories(); }
+
+  @Post('categories')
+  createCategory(@Body() input: CreateCategoryDto) { return this.adminService.createCategory(input); }
+
+  @Patch('categories/:id')
+  updateCategory(@Param('id', new ParseUUIDPipe()) id: string, @Body() input: UpdateCategoryDto) {
+    return this.adminService.updateCategory(id, input);
+  }
+
+  @Put('games/:id/questions')
+  setGameQuestions(@Param('id', new ParseUUIDPipe()) id: string, @Body() input: SetLevelQuestionsDto) {
+    return this.adminService.setGameQuestions(id, input);
+  }
+
   @Get('games')
   listGames() {
     return this.adminService.listGames();
@@ -55,6 +78,11 @@ export class AdminController {
   @Post('games')
   createGame(@Body() input: CreateGameDto) {
     return this.adminService.createGame(input);
+  }
+
+  @Delete('games/:id')
+  deleteGame(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.adminService.deleteGame(id);
   }
 
   @Patch('games/:id')

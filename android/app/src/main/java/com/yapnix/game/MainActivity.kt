@@ -126,10 +126,9 @@ private fun YapnixApp(viewModel: GameViewModel) {
         dismissButton = { TextButton(onClick = { confirmExit = false; viewModel.resumeSession() }) { Text("Keep playing") } })
     when (state.screen) {
         AppScreen.HOME -> HomeScreen(state, viewModel::openGame, viewModel::refreshGames, viewModel)
-        AppScreen.LEVELS -> LevelsScreen(
+        AppScreen.SETUP -> GameSetupScreen(
             state = state,
             onBack = viewModel::backToHome,
-            onSelectLevel = viewModel::openLevel,
             onStart = viewModel::startSession,
             viewModel = viewModel,
         )
@@ -163,13 +162,15 @@ private fun HomeScreen(
         } else if (state.games.isEmpty()) {
             EmptyPanel(
                 title = "No published games yet",
-                detail = "Publish a game and at least one level in Yapnix Studio, then refresh.",
+                detail = "Publish a category and a game with questions in Yapnix Studio, then refresh.",
                 action = "Refresh",
                 onAction = onRefresh,
             )
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                state.games.forEach { game ->
+                state.games.groupBy { it.categoryId }.values.forEach { categoryGames ->
+                    Text(categoryGames.first().categoryName, color = Lime, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    categoryGames.forEach { game ->
                     Button(
                         onClick = { onSelectGame(game) },
                         modifier = Modifier.fillMaxWidth().height(76.dp),
@@ -180,6 +181,7 @@ private fun HomeScreen(
                             Text(game.name, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                             if (game.description.isNotBlank()) Text(game.description, color = Muted, fontSize = 13.sp)
                         }
+                    }
                     }
                 }
             }
@@ -192,10 +194,9 @@ private fun HomeScreen(
 }
 
 @Composable
-private fun LevelsScreen(
+private fun GameSetupScreen(
     state: GameUiState,
     onBack: () -> Unit,
-    onSelectLevel: (Level) -> Unit,
     onStart: () -> Unit,
     viewModel: GameViewModel,
 ) {
@@ -216,34 +217,18 @@ private fun LevelsScreen(
     Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 24.dp)) {
         TextButton(onClick = onBack) { Text("←  GAMES", color = Lime) }
         Spacer(Modifier.height(20.dp))
-        Text(state.selectedGame?.name ?: "Levels", color = Mist, fontSize = 34.sp, fontWeight = FontWeight.Black)
+        Text(state.selectedGame?.name ?: "Game", color = Mist, fontSize = 34.sp, fontWeight = FontWeight.Black)
         Spacer(Modifier.height(8.dp))
-        Text("Choose your round", color = Muted)
+        Text(state.selectedGame?.description.orEmpty(), color = Muted)
         Spacer(Modifier.height(24.dp))
 
         when {
             state.loading -> CircularProgressIndicator(color = Lime)
             state.error != null -> ErrorPanel(state.error, "Check the backend and try again.", onBack)
-            state.levels.isEmpty() -> EmptyPanel(
-                title = "No published levels",
-                detail = "Create and publish a level in Yapnix Studio first.",
-                action = "Back",
-                onAction = onBack,
+            state.playableLevel != null -> Text(
+                "${state.playableLevel.questions.size} questions · ${state.selectedLevel?.timeLimitSeconds ?: 5}s each",
+                color = Muted, fontSize = 16.sp,
             )
-            else -> LazyColumn(modifier = Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(state.levels, key = Level::id) { level ->
-                    OutlinedButton(
-                        onClick = { onSelectLevel(level) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                    ) {
-                        Column(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
-                            Text(level.name, color = Mist, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                            Text("${level.questionCount} images  ·  ${level.timeLimitSeconds}s each", color = Muted, fontSize = 13.sp)
-                        }
-                    }
-                }
-            }
         }
 
         state.savedProgress?.let { progress ->
@@ -341,6 +326,8 @@ private fun SessionScreen(state: GameUiState, viewModel: GameViewModel) {
             Text(if (state.phase == SessionPhase.PLAYING) "● LISTENING" else "", color = Lime, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(18.dp))
+        Text(playable?.prompt ?: "What is this?", color = Mist, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(12.dp))
         Box(
             Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(16.dp)).background(Panel),
             contentAlignment = Alignment.Center,
@@ -348,7 +335,7 @@ private fun SessionScreen(state: GameUiState, viewModel: GameViewModel) {
             if (question != null) {
                 AsyncImage(
                     model = question.imageUrl,
-                    contentDescription = "Guess the object",
+                    contentDescription = playable?.prompt ?: "What is this?",
                     modifier = Modifier.fillMaxSize().padding(14.dp).clip(RoundedCornerShape(10.dp)),
                     contentScale = ContentScale.Fit,
                 )

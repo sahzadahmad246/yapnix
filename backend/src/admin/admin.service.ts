@@ -4,6 +4,8 @@ import { publicationIssues, type LevelContent } from './readiness.js';
 import { SupabaseService } from '../supabase/supabase.service.js';
 import type {
   CreateGameDto,
+  CreateCategoryDto,
+  UpdateCategoryDto,
   CreateLevelDto,
   CreateQuestionDto,
   SetLevelQuestionsDto,
@@ -49,37 +51,66 @@ export class AdminService {
     };
   }
 
-  async listGames() {
-    const { data, error } = await this.supabase.adminClient
-      .from('games')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) throw new InternalServerErrorException('Unable to load games');
+  async listCategories() {
+    const { data, error } = await this.supabase.adminClient.from('game_categories').select('*').order('created_at');
+    if (error) throw new InternalServerErrorException('Unable to load game categories. Apply migration 007 first.');
     return data;
   }
 
-  async createGame(input: CreateGameDto) {
-    const { data, error } = await this.supabase.adminClient
-      .from('games')
-      .insert(input)
-      .select()
-      .single();
+  async createCategory(input: CreateCategoryDto) {
+    const { data, error } = await this.supabase.adminClient.from('game_categories').insert(input).select().single();
+    if (error) this.fail(error, 'Unable to create category');
+    return data;
+  }
 
+  async updateCategory(id: string, input: UpdateCategoryDto) {
+    const { data, error } = await this.supabase.adminClient.from('game_categories').update(input).eq('id', id).select().maybeSingle();
+    if (error) this.fail(error, 'Unable to update category');
+    if (!data) throw new NotFoundException('Category not found');
+    return data;
+  }
+
+  async listGames() {
+    const { data, error } = await this.supabase.adminClient.from('games')
+      .select('*,game_categories(id,name,slug,gameplay_kind,is_published),levels(id,question_count,default_time_limit_seconds,level_questions(question_id,order_index,questions(id,is_active,image_storage_path,primary_answer)))')
+      .order('created_at', { ascending: false });
+    if (error) throw new InternalServerErrorException('Unable to load games');
+    const { data: images, error: imageError } = await this.supabase.adminClient.from('media_records').select('storage_path').eq('status', 'ready');
+    if (imageError) throw new InternalServerErrorException('Unable to check game images');
+    const ready = new Set((images ?? []).map(image => String(image.storage_path)));
+    return (data ?? []).map(game => {
+      const session = game.levels?.[0];
+      const metadata = { ...game, levels: undefined };
+      return { ...metadata, question_count: session?.question_count ?? 5,
+        default_time_limit_seconds: session?.default_time_limit_seconds ?? 5,
+        game_questions: session?.level_questions ?? [],
+        publication_issues: session ? publicationIssues(session as unknown as LevelContent, ready) : ['Game configuration is missing.'] };
+    });
+  }
+
+  async createGame(input: CreateGameDto) {
+    const { data, error } = await this.supabase.adminClient.rpc('create_standalone_game', { content: input });
     if (error) this.fail(error, 'Unable to create game');
     return data;
   }
 
-  async updateGame(id: string, input: UpdateGameDto) {
-    const { data, error } = await this.supabase.adminClient
-      .from('games')
-      .update(input)
-      .eq('id', id)
-      .select()
-      .maybeSingle();
+  async setGameQuestions(id: string, input: SetLevelQuestionsDto) {
+    const { error } = await this.supabase.adminClient.rpc('set_game_questions', { target_game_id: id, question_ids: input.question_ids });
+    if (error) this.fail(error, 'Unable to save game questions');
+    return { game_id: id, question_ids: input.question_ids };
+  }
 
-    if (error) this.fail(error, 'Unable to update game');
+  async deleteGame(id: string) {
+    const { data, error } = await this.supabase.adminClient
+      .from('games').delete().eq('id', id).select('id').maybeSingle();
+    if (error) this.fail(error, 'Unable to delete game');
     if (!data) throw new NotFoundException('Game not found');
+    return { id: data.id };
+  }
+
+  async updateGame(id: string, input: UpdateGameDto) {
+    const { data, error } = await this.supabase.adminClient.rpc('update_standalone_game', { target_game_id: id, changes: input });
+    if (error) this.fail(error, 'Unable to update game');
     return data;
   }
 

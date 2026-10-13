@@ -9,7 +9,7 @@ describe('content editing', () => {
       row={{ primary_answer: 'bike', image_storage_path: 'bike.webp', language: 'en', is_active: true,
         question_answers: [{ answer: 'bike', is_primary: true }, { answer: 'bicycle', is_primary: false }] }} />);
     expect(html).toContain('value="bike.webp"');
-    expect(html).toContain('value="bicycle"');
+    expect(html).toContain('>bicycle</textarea>');
     expect(html).toContain('checked=""');
   });
 

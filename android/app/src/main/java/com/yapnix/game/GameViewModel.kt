@@ -27,14 +27,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-enum class AppScreen { HOME, LEVELS, SESSION, RESULTS, RECORDINGS }
+enum class AppScreen { HOME, SETUP, SESSION, RESULTS, RECORDINGS }
 enum class SessionPhase { PREPARING, PLAYING, FEEDBACK }
 
 data class GameUiState(
     val screen: AppScreen = AppScreen.HOME,
     val games: List<Game> = emptyList(),
     val selectedGame: Game? = null,
-    val levels: List<Level> = emptyList(),
     val selectedLevel: Level? = null,
     val playableLevel: PlayableLevel? = null,
     val savedProgress: SavedProgress? = null,
@@ -111,30 +110,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun openGame(game: Game) {
-        contentJob?.cancel()
-        contentJob = viewModelScope.launch {
-            mutableState.value = mutableState.value.copy(
-                selectedGame = game,
-                levels = emptyList(),
-                selectedLevel = null,
-                playableLevel = null,
-                savedProgress = null,
-                screen = AppScreen.LEVELS,
-                loading = true,
-                error = null,
-            )
-            runCatching { api.getLevels(game.id) }
-                .onSuccess { levels ->
-                    mutableState.value = mutableState.value.copy(levels = levels, loading = false)
-                }
-                .onFailure { failure ->
-                    if (failure is CancellationException) throw failure
-                    mutableState.value = mutableState.value.copy(
-                        loading = false,
-                        error = failure.message ?: "Could not load levels",
-                    )
-                }
-        }
+        mutableState.value = mutableState.value.copy(
+            selectedGame = game, selectedLevel = null, playableLevel = null,
+            savedProgress = null, screen = AppScreen.SETUP, loading = true, error = null,
+        )
+        openLevel(Level(game.sessionId, game.id, game.name, game.description, game.questionCount, game.timeLimitSeconds))
     }
 
     fun openLevel(level: Level) {
@@ -165,7 +145,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     if (failure is CancellationException) throw failure
                     mutableState.value = mutableState.value.copy(
                         loading = false,
-                        error = failure.message ?: "Could not load level",
+                        error = failure.message ?: "Could not load game",
                     )
                 }
         }

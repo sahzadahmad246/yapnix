@@ -152,3 +152,13 @@ Apply the executable migrations in `supabase/migrations` rather than copying thi
 Published levels require exactly their configured number of active questions, ready media records, and primary answers. Published games require a published level. Unpublish a game before unpublishing its last level, and unpublish a level before making incomplete content edits.
 
 Content images live in the private `content-images` bucket. `supabase/storage_setup.sql` blocks direct client access. Approved Studio operations go through the backend; published gameplay receives temporary signed URLs. Local Android recordings are unrelated to Storage and are never synchronized automatically.
+
+## Current content hierarchy (migration 007)
+
+The authoring model is Category → Game → Questions, with no levels. See
+[the current content workflow](admin-game-workflow.md) for migration instructions.
+`game_categories` groups games and selects a supported speaking mechanic (currently
+`image_guess`). `games.category_id` is required. The legacy `levels` table stores
+exactly one session configuration per game, enforced by `levels_one_session_per_game`;
+its stable UUID preserves existing assignments and player progress. It is not a
+user-facing hierarchy. Category publication participates in all public content RLS.

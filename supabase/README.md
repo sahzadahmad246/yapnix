@@ -4,8 +4,8 @@ Run SQL in your Supabase project's **SQL Editor**, using the `postgres` role. Th
 
 ## Choose one complete script
 
-- **Existing Yapnix tables / migration 001 already applied:** copy all of [upgrade_existing.sql](sql-editor/upgrade_existing.sql) into a new query and Run. Includes migrations 002–006 and Storage. It is safe to reapply these upgrades.
-- **Fresh project with no Yapnix tables:** use [setup_fresh.sql](sql-editor/setup_fresh.sql). Includes migrations 001–006 and Storage. The guard refuses to run over existing tables.
+- **Existing Yapnix tables / migration 001 already applied:** copy all of [upgrade_existing.sql](sql-editor/upgrade_existing.sql) into a new query and Run. Includes migrations 002–008 and Storage. It is safe to reapply these upgrades.
+- **Fresh project with no Yapnix tables:** use [setup_fresh.sql](sql-editor/setup_fresh.sql). Includes migrations 001–008 and Storage. The guard refuses to run over existing tables.
 
 Do not run both scripts as separate setup steps. They run in a transaction: on error, all changes in that run roll back. Neither script deletes your content. They do not change Google provider settings or grant anyone administrator access.
 
@@ -17,7 +17,7 @@ Do not run both scripts as separate setup steps. They run in a transaction: on e
 4. Configure the backend's ignored environment file with `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`. Set production `CORS_ORIGINS` to the Studio origin. Keep the service-role key exclusively in the backend.
 5. Configure Studio with `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `NEXT_PUBLIC_BACKEND_API_URL`. Android uses `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `API_BASE_URL` in ignored `local.properties`. All apps must refer to the same Supabase project.
 6. Sign in to Studio once. Edit the email in [approve_admin.sql](approve_admin.sql), run it in SQL Editor, then refresh Studio. A Google account alone grants no admin access.
-7. In Studio, create a game, click **Levels**, create a level, then open **Images & answers** on that level. Use **Add new image & answer** to upload a picture, enter its correct name and accepted alternatives, and save. Click **Save level images** to link the selected pictures to the level. Drafts can be saved with fewer images; fill the configured image count before publishing the level, then the game. Verify the image and guest game on Android.
+7. In Studio, open **Categories → Guess → Games → New game**. Create Animals with five questions and a timer, add images and accepted answers directly, then click **Save game questions** and **Publish game**. There is no level step. The category must also be published. See [the content and migration guide](../docs/admin-game-workflow.md).
 
 Upload game images through **Studio**, rather than manually through the Storage dashboard: Studio also creates the media metadata required by publication checks. `questions/` is created by uploading object paths; no manual folder setup is needed. Android uses the backend's temporary `image_url` and does not construct a public bucket URL. Recordings stay on the phone.
 
@@ -35,3 +35,12 @@ Upload game images through **Studio**, rather than manually through the Storage 
 [storage_setup.sql](storage_setup.sql) is a compatibility shortcut containing migration 006. If you already ran one complete bundle, you do not need this shortcut separately.
 
 Generated scripts stay aligned with migrations using `npm run sql:generate` and `npm run sql:check`. Run tests sequentially on this 8 GB machine. Provider reference: [Supabase private buckets and signed URLs](https://supabase.com/docs/guides/storage/buckets/fundamentals).
+
+## Picture editor and safe removal upgrade
+
+If game categories (migration 007) are already installed, run
+[upgrade_game_editor.sql](sql-editor/upgrade_game_editor.sql) for migration 008 only.
+It adds game-wide prompt selection and fixes editing/removing published game
+questions. Saving changed assignments moves the game to draft and updates its
+question count. Re-publish after reviewing the saved selection. No image files,
+reusable questions or player progress are deleted by this upgrade.

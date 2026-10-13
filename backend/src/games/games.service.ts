@@ -1,3 +1,4 @@
+import { gamePrompt } from './game-prompts.js';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../supabase/supabase.service.js';
 import { MediaService } from '../media/media.service.js';
@@ -9,12 +10,29 @@ export class GamesService {
   async listPublishedGames() {
     const { data, error } = await this.supabase.client
       .from('games')
-      .select('id,name,description,difficulty')
+      .select('id,name,description,difficulty,prompt_key,category_id,game_categories!inner(id,name,slug,gameplay_kind),levels(id,question_count,default_time_limit_seconds)')
       .eq('is_published', true)
       .order('created_at', { ascending: false });
 
     if (error) throw new NotFoundException('Published games are unavailable');
-    return data;
+    return (data ?? []).map(game => {
+      const session = game.levels?.[0];
+      return { id: game.id, name: game.name, description: game.description, difficulty: game.difficulty,
+        category_id: game.category_id, category: game.game_categories, prompt_key: game.prompt_key, prompt: gamePrompt(game.prompt_key),
+        session_id: session?.id, question_count: session?.question_count,
+        default_time_limit_seconds: session?.default_time_limit_seconds };
+    });
+  }
+
+  async getPlayableGame(gameId: string) {
+    const { data: game, error: gameError } = await this.supabase.client.from('games')
+      .select('id,name,description,prompt_key,category_id,game_categories(id,name,slug,gameplay_kind)')
+      .eq('id', gameId).eq('is_published', true).maybeSingle();
+    if (gameError || !game) throw new NotFoundException('Published game not found');
+    const { data, error } = await this.supabase.client.from('levels').select('id').eq('game_id', gameId).eq('is_published', true).maybeSingle();
+    if (error || !data) throw new NotFoundException('Published game not found');
+    const playable = await this.getPlayableLevel(gameId, data.id);
+    return { ...playable, name: game.name, description: game.description, category_id: game.category_id, category: game.game_categories, prompt_key: game.prompt_key, prompt: gamePrompt(game.prompt_key) };
   }
 
   async listPublishedLevels(gameId: string) {

@@ -20,17 +20,9 @@ class GameApi(
                 name = value.getString("name"),
                 description = value.optString("description"),
                 difficulty = value.optInt("difficulty", 1),
-            )
-        }
-    }
-
-    suspend fun getLevels(gameId: String): List<Level> = withContext(Dispatchers.IO) {
-        requestArray("games/${Uri.encode(gameId)}/levels").map { value ->
-            Level(
-                id = value.getString("id"),
-                gameId = value.getString("game_id"),
-                name = value.getString("name"),
-                description = value.optString("description"),
+                categoryId = value.optString("category_id"),
+                categoryName = value.optJSONObject("category")?.optString("name") ?: "Guess",
+                sessionId = value.getString("session_id"),
                 questionCount = value.optInt("question_count", 5),
                 timeLimitSeconds = value.optInt("default_time_limit_seconds", 5),
             )
@@ -39,7 +31,7 @@ class GameApi(
 
     suspend fun getPlayableLevel(level: Level): PlayableLevel = withContext(Dispatchers.IO) {
         val value = requestObject(
-            "games/${Uri.encode(level.gameId)}/levels/${Uri.encode(level.id)}",
+            "games/${Uri.encode(level.gameId)}/play",
         )
         val questionsJson = value.optJSONArray("questions") ?: JSONArray()
         val questions = (0 until questionsJson.length()).map { index ->
@@ -57,7 +49,7 @@ class GameApi(
             )
         }
 
-        PlayableLevel(level = level.copy(questionCount = questions.size), questions = questions)
+        PlayableLevel(level = level.copy(questionCount = questions.size), questions = questions, prompt = value.optString("prompt", "What is this?"))
     }
 
     suspend fun getProgress(token: String): List<SavedProgress> = withContext(Dispatchers.IO) {

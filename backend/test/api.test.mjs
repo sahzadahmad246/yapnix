@@ -21,7 +21,7 @@ const ids = {
   question: '77777777-7777-4777-8777-777777777777',
 };
 const games = [
-  { id: ids.game, name: 'Published game', is_published: true },
+  { id: ids.game, name: 'Published game', is_published: true, prompt_key: 'guess_animal' },
   { id: ids.draftGame, name: 'Draft game', is_published: false },
 ];
 const levels = [
@@ -56,6 +56,7 @@ function query(table, scope) {
   };
   const builder = {
     select() { return builder; },
+    delete() { calls.push({ table, scope, operation: 'delete', filters }); return builder; },
     insert(value) { inserted = value; return builder; },
     eq(key, value) { filters.push([key, value]); return builder; },
     order() { return builder; },
@@ -92,6 +93,9 @@ const supabase = {
     async rpc(name, args) {
       // Match the JSON boundary used by the real Supabase HTTP client.
       questionUpdate = JSON.parse(JSON.stringify({ name, args }));
+      if (name === 'create_standalone_game') return { data: { id: ids.game, ...args.content }, error: null };
+      if (name === 'update_standalone_game') return args.target_game_id === ids.game ? { data: { id: ids.game, ...args.changes }, error: null } : { data: null, error: { code: 'P0002' } };
+      if (name === 'set_game_questions') return { data: null, error: null };
       if (args.target_question_id !== ids.question) return { data: null, error: { code: 'P0002' } };
       return { data: { id: ids.question, ...args.changes }, error: null };
     },
@@ -271,4 +275,77 @@ test('approved image uploads return a private preview and a generated Storage pa
   assert.match(body.storage_path, /^questions\/[0-9a-f-]+\.webp$/);
   assert.match(body.image_url, /token=private/);
   assert.equal(body.mime_type, 'image/webp');
+});
+
+
+test('game deletion requires a server-approved admin before accessing content', async () => {
+  assert.equal((await request(`/admin/games/${ids.game}`, undefined, undefined, 'DELETE')).status, 401);
+  assert.equal((await request(`/admin/games/${ids.game}`, 'player-token', undefined, 'DELETE')).status, 403);
+  assert.equal((await request(`/admin/games/${ids.game}`, 'unapproved-token', undefined, 'DELETE')).status, 403);
+  assert.equal(calls.some(call => call.operation === 'delete'), false);
+});
+
+test('approved game deletion targets only the requested game and rejects missing IDs', async () => {
+  assert.equal((await request('/admin/games/not-a-uuid', 'admin-token', undefined, 'DELETE')).status, 400);
+  assert.equal(calls.some(call => call.operation === 'delete'), false);
+  const response = await request(`/admin/games/${ids.game}`, 'admin-token', undefined, 'DELETE');
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, { id: ids.game });
+  assert.deepEqual(calls.find(call => call.operation === 'delete'), {
+    table: 'games', scope: 'service-role', operation: 'delete', filters: [['id', ids.game]],
+  });
+  assert.equal((await request(`/admin/games/${ids.question}`, 'admin-token', undefined, 'DELETE')).status, 404);
+});
+
+
+test('standalone games are created with their question configuration in one RPC', async () => {
+  const content = { name: 'Animals', slug: 'animals', category_id: ids.game, difficulty: 1, question_count: 5, default_time_limit_seconds: 5 };
+  const response = await request('/admin/games', 'admin-token', content);
+  assert.equal(response.status, 201);
+  assert.deepEqual(questionUpdate, { name: 'create_standalone_game', args: { content } });
+});
+
+test('game assignment and publication are guarded and validate identifiers', async () => {
+  assert.equal((await request(`/admin/games/${ids.game}/questions`, 'player-token', { question_ids: [] }, 'PUT')).status, 403);
+  assert.equal((await request(`/admin/games/${ids.game}/questions`, 'admin-token', { question_ids: ['invalid'] }, 'PUT')).status, 400);
+  assert.equal(questionUpdate, undefined);
+  assert.equal((await request(`/admin/games/${ids.game}/questions`, 'admin-token', { question_ids: [ids.question] }, 'PUT')).status, 200);
+  assert.deepEqual(questionUpdate, { name: 'set_game_questions', args: { target_game_id: ids.game, question_ids: [ids.question] } });
+  assert.equal((await request(`/admin/games/${ids.game}`, 'admin-token', { is_published: true }, 'PATCH')).status, 200);
+  assert.deepEqual(questionUpdate, { name: 'update_standalone_game', args: { target_game_id: ids.game, changes: { is_published: true } } });
+});
+
+test('category management requires a server-approved administrator', async () => {
+  assert.equal((await request('/admin/categories', undefined)).status, 401);
+  assert.equal((await request('/admin/categories', 'player-token')).status, 403);
+  assert.equal((await request('/admin/categories', 'admin-token')).status, 200);
+  assert.equal((await request('/admin/categories', 'admin-token', { name:'Unsupported', slug:'unsupported', gameplay_kind:'made_up' })).status, 400);
+});
+
+test('direct game play rejects drafts and malformed IDs without a level choice', async () => {
+  assert.equal((await request(`/games/${ids.draftGame}/play`)).status, 404);
+  assert.equal((await request('/games/invalid/play')).status, 400);
+});
+
+
+test('a published game plays directly with ordered questions and the game name', async () => {
+  levels[0].level_questions = [{order_index:0,questions:{id:ids.question,image_storage_path:'cat.webp',primary_answer:'cat',difficulty:1,language:'en-US',question_answers:[{answer:'cat'},{answer:'kitty'}]}}];
+  try {
+    const response = await request(`/games/${ids.game}/play`);
+    assert.equal(response.status, 200);
+    assert.equal(response.body.name, 'Published game');
+    assert.equal(response.body.prompt, 'Guess the animal');
+    assert.equal(response.body.questions[0].primary_answer, 'cat');
+    assert.deepEqual(response.body.questions[0].accepted_answers, ['cat','kitty']);
+  } finally { levels[0].level_questions = []; }
+});
+
+
+test('game prompts are approved-admin only and unknown prompt keys are rejected', async () => {
+  assert.equal((await request('/admin/game-prompts')).status, 401);
+  const response=await request('/admin/game-prompts','admin-token');
+  assert.equal(response.status,200);
+  assert.ok(response.body.some(prompt=>prompt.key==='guess_animal'&&prompt.label==='Guess the animal'));
+  assert.equal((await request(`/admin/games/${ids.game}`,'admin-token',{prompt_key:'not_supported'},'PATCH')).status,400);
+  assert.equal((await request(`/admin/games/${ids.game}`,'admin-token',{prompt_key:'guess_animal'},'PATCH')).status,200);
 });

@@ -41,3 +41,39 @@ describe('atomic question updates', () => {
     await expect(service.updateQuestion('question', { difficulty: 2 })).rejects.toBeInstanceOf(InternalServerErrorException);
   });
 });
+
+
+describe('game deletion', () => {
+  function setup(data: unknown, error: unknown = null) {
+    const query = { delete: vi.fn(), eq: vi.fn(), select: vi.fn(), maybeSingle: vi.fn().mockResolvedValue({ data, error }) };
+    query.delete.mockReturnValue(query); query.eq.mockReturnValue(query); query.select.mockReturnValue(query);
+    const from = vi.fn().mockReturnValue(query);
+    return { service: new AdminService({ adminClient: { from } } as unknown as SupabaseService, {} as MediaService), query, from };
+  }
+  it('deletes only the specified game and returns its identifier', async () => {
+    const { service, query, from } = setup({ id: 'game' });
+    await expect(service.deleteGame('game')).resolves.toEqual({ id: 'game' });
+    expect(from).toHaveBeenCalledWith('games');
+    expect(query.eq).toHaveBeenCalledWith('id', 'game');
+  });
+  it('returns 404 when the game no longer exists', async () => {
+    await expect(setup(null).service.deleteGame('missing')).rejects.toBeInstanceOf(NotFoundException);
+  });
+  it('keeps database failures from being reported as successful deletion', async () => {
+    await expect(setup(null, { code: 'XX000' }).service.deleteGame('game')).rejects.toBeInstanceOf(InternalServerErrorException);
+  });
+});
+
+
+describe('standalone game transactions', () => {
+  it('sends game metadata and its question settings through one atomic write', async () => {
+    const rpc=vi.fn().mockResolvedValue({data:{id:'game'},error:null});
+    const service=new AdminService({adminClient:{rpc}} as unknown as SupabaseService, {} as MediaService);
+    await service.createGame({name:'Animals',slug:'animals',difficulty:1,question_count:5});
+    expect(rpc).toHaveBeenCalledWith('create_standalone_game',{content:{name:'Animals',slug:'animals',difficulty:1,question_count:5}});
+    await service.updateGame('game',{is_published:true});
+    expect(rpc).toHaveBeenCalledWith('update_standalone_game',{target_game_id:'game',changes:{is_published:true}});
+    await service.setGameQuestions('game',{question_ids:['cat']});
+    expect(rpc).toHaveBeenCalledWith('set_game_questions',{target_game_id:'game',question_ids:['cat']});
+  });
+});

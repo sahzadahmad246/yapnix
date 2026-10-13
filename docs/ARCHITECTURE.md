@@ -43,3 +43,16 @@ Video remains local to the Android device in the MVP. CameraX records a camera r
 ## Public API trust boundary
 
 Public APIs only return published content. Server-side answer validation is not part of the MVP, so client responses cannot be treated as authoritative competition data.
+
+## Standalone speaking games
+
+The current model is Category → Game → Questions (migration 007), for example
+Guess → Animals → five image/answer questions. Admin creates game metadata and
+its private session configuration atomically, assigns ordered questions directly
+to the game, and publishes the complete game in one action. Android groups games
+by category and calls `/api/games/:id/play`; there is no level picker.
+
+The legacy session/progress UUID is retained for backward compatibility. New
+speaking mechanics require a player implementation and a validated question schema;
+creating a category alone does not enable unsupported gameplay. See
+[the workflow and upgrade guide](admin-game-workflow.md).
