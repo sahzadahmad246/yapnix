@@ -5,7 +5,7 @@
 - Kotlin and Jetpack Compose.
 - Coroutines and Flow.
 - MVVM/ViewModel state ownership.
-- CameraX for preview and capture.
+- CameraX for front-camera preview; MediaProjection for consented game-screen capture.
 - Android media APIs for video output.
 - HTTP API calls through HttpURLConnection on IO dispatchers.
 - App-private SharedPreferences for local progress, with serialized writes.
@@ -38,7 +38,9 @@ The Android app stores progress locally as a non-authoritative preference. It pe
 
 ## Recording
 
-Video remains local to the Android device in the MVP. CameraX records a camera reaction video in app-private storage. Finalized videos can be previewed, exported through the Android document picker, shared through FileProvider, or deleted after confirmation. No automatic upload occurs. This implementation does not composite the game screen into the video. Simultaneous microphone recording and speech recognition require physical-device validation.
+Video remains local to the Android device. A media-projection foreground service records the screen with a CameraX TextureView front-camera preview visible in the game. Recordings intentionally contain video only: SpeechRecognizer owns the microphone for answers. Android capture consent is requested for each new recording. Pausing, backgrounding or leaving a round stops and finalizes it. Finalized videos can be previewed, exported through the Android document picker, shared through FileProvider, or deleted after confirmation. No automatic upload occurs. Physical-device validation is pending.
+
+Game metadata and all question pictures are fetched before Play becomes available; Coil caches image bytes using the question ID and storage path rather than the temporary signed URL. Each question also waits for image-display success and text-to-speech completion before starting its countdown. Spoken feedback completes before advancing. Android text-to-speech failure falls back to visual play.
 
 ## Public API trust boundary
 

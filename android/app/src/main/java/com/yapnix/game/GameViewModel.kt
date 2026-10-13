@@ -9,6 +9,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.yapnix.game.data.ApiException
 import com.yapnix.game.data.Game
+import com.yapnix.game.gameplay.RoundReadiness
+import com.yapnix.game.data.GameImageCache
 import com.yapnix.game.data.GameApi
 import com.yapnix.game.data.Level
 import com.yapnix.game.data.PlayableLevel
@@ -27,7 +29,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-enum class AppScreen { HOME, SETUP, SESSION, RESULTS, RECORDINGS }
+enum class AppScreen { HOME, PROGRESS, PROFILE, SETUP, SESSION, RESULTS, RECORDINGS }
 enum class SessionPhase { PREPARING, PLAYING, FEEDBACK }
 
 data class GameUiState(
@@ -46,6 +48,11 @@ data class GameUiState(
     val phase: SessionPhase = SessionPhase.PREPARING,
     val feedback: String = "",
     val loading: Boolean = false,
+    val loadedImages: Int = 0,
+    val totalImages: Int = 0,
+    val imageReadyId: String? = null,
+    val promptReadyId: String? = null,
+    val progress: List<SavedProgress> = emptyList(),
     val error: String? = null,
     val authSession: AuthSession? = null,
     val accountBusy: Boolean = false,
@@ -89,6 +96,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             auth.session.collect { session -> mutableState.value = mutableState.value.copy(authSession = session) }
         }
         refreshGames()
+        viewModelScope.launch { mutableState.value = mutableState.value.copy(progress = progressStore.getAll()) }
     }
 
     fun refreshGames() {
@@ -124,16 +132,20 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 selectedLevel = level,
                 playableLevel = null,
                 savedProgress = null,
-                loading = true,
+                loading = true, loadedImages = 0, totalImages = level.questionCount, imageReadyId = null,
                 error = null,
             )
-            runCatching { api.getPlayableLevel(level) }
-                .onSuccess { playable ->
-                    val flushed = CompletableDeferred<Unit>()
-                    writes.send(ProgressWrite.Flush(flushed))
-                    flushed.await()
-                    val fingerprint = playable.questions.joinToString(",") { it.id }
-                    val saved = progressStore.get(level.id)?.takeIf { it.contentFingerprint == fingerprint }
+            runCatching {
+                val playable = api.getPlayableLevel(level)
+                mutableState.value = mutableState.value.copy(totalImages = playable.questions.size)
+                GameImageCache.preload(getApplication(), playable.questions) { count -> mutableState.value = mutableState.value.copy(loadedImages = count) }
+                val flushed = CompletableDeferred<Unit>()
+                writes.send(ProgressWrite.Flush(flushed))
+                flushed.await()
+                val fingerprint = playable.questions.joinToString(",") { it.id }
+                playable to progressStore.get(level.id)?.takeIf { it.contentFingerprint == fingerprint }
+            }
+                .onSuccess { (playable, saved) ->
                     mutableState.value = mutableState.value.copy(
                         selectedLevel = level,
                         playableLevel = playable,
@@ -156,7 +168,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (current.syncing || current.loading) return
         val playable = current.playableLevel ?: return
         if (playable.questions.isEmpty()) {
-            mutableState.value = current.copy(error = "This level has no playable questions yet")
+            mutableState.value = current.copy(error = "This game has no playable questions yet")
             return
         }
         val saved = current.savedProgress?.takeUnless { it.completed }
@@ -172,14 +184,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             feedback = "Get ready",
             listenAttempt = 0,
             error = null,
-            paused = false,
+            paused = false, imageReadyId = null, promptReadyId = null,
         )
         saveProgress(completed = false)
     }
 
     fun tickPreparation() {
         val current = mutableState.value
-        if (current.screen != AppScreen.SESSION || current.paused || current.phase != SessionPhase.PREPARING) return
+        if (current.screen != AppScreen.SESSION || current.paused || current.phase != SessionPhase.PREPARING || !RoundReadiness.ready(current.playableLevel?.questions?.getOrNull(current.questionIndex)?.id, current.imageReadyId, current.promptReadyId)) return
         if (current.preparationSeconds <= 1) {
             questionDeadline = SystemClock.elapsedRealtime() + (current.playableLevel?.level?.timeLimitSeconds ?: 5) * 1000L
             mutableState.value = current.copy(
@@ -258,21 +270,47 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             mutableState.value = current.copy(screen = AppScreen.RESULTS, showSignInPrompt = auth.session.value == null && progressStore.shouldPrompt())
             saveProgress(completed = true)
         } else {
-            questionDeadline = SystemClock.elapsedRealtime() + playable.level.timeLimitSeconds * 1000L
             mutableState.value = current.copy(
                 questionIndex = current.questionIndex + 1,
                 remainingSeconds = playable.level.timeLimitSeconds,
-                phase = SessionPhase.PLAYING,
-                feedback = "Listening",
+                phase = SessionPhase.PREPARING, preparationSeconds = 3, imageReadyId = null, promptReadyId = null,
+                feedback = "Loading picture",
                 listenAttempt = current.listenAttempt + 1,
             )
             saveProgress(completed = false)
         }
     }
 
-    fun replay() {
-        mutableState.value = mutableState.value.copy(savedProgress = null)
-        startSession()
+    fun replay() { mutableState.value.selectedGame?.let { openGame(it) } }
+
+    fun promptReady(id: String) {
+        val current = mutableState.value
+        if (current.phase == SessionPhase.PREPARING && current.playableLevel?.questions?.getOrNull(current.questionIndex)?.id == id) mutableState.value = current.copy(promptReadyId = id)
+    }
+
+    fun imageReady(id: String) {
+        val current = mutableState.value
+        if (current.playableLevel?.questions?.getOrNull(current.questionIndex)?.id == id) mutableState.value = current.copy(imageReadyId = id)
+    }
+
+    fun imageFailed() { mutableState.value = mutableState.value.copy(paused = true, notice = "This picture could not be displayed. Return to the game and try again; your progress is saved.") }
+
+    fun navigate(screen: AppScreen) {
+        if (screen == AppScreen.HOME) { backToHome(); return }
+        if (screen !in listOf(AppScreen.PROGRESS, AppScreen.PROFILE, AppScreen.RECORDINGS)) return
+        contentJob?.cancel()
+        mutableState.value = mutableState.value.copy(screen = screen, loading = false, error = null)
+        viewModelScope.launch {
+            runCatching {
+                val flushed = CompletableDeferred<Unit>()
+                writes.send(ProgressWrite.Flush(flushed)); flushed.await()
+                progressStore.getAll()
+            }.onSuccess { mutableState.value = mutableState.value.copy(progress = it) }
+                .onFailure {
+                    if (it is CancellationException) throw it
+                    showNotice("Could not read saved progress on this device")
+                }
+        }
     }
 
     fun backToHome() {
@@ -326,7 +364,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setRecording(enabled: Boolean) { mutableState.value = mutableState.value.copy(recordEnabled = enabled) }
-    fun openRecordings() { mutableState.value = mutableState.value.copy(screen = AppScreen.RECORDINGS) }
+    fun openRecordings() { navigate(AppScreen.RECORDINGS) }
     fun dismissSignInPrompt() {
         progressStore.dismissPrompt(); mutableState.value = mutableState.value.copy(showSignInPrompt = false)
     }

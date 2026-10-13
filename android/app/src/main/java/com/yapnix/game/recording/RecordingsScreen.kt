@@ -14,6 +14,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Card
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +47,8 @@ fun RecordingsScreen(onBack: () -> Unit) {
     val store = remember(context) { RecordingStore(context) }
     val scope = rememberCoroutineScope()
     var recordings by remember { mutableStateOf(store.list()) }
+    val capture by ScreenRecordingService.status.collectAsState()
+    LaunchedEffect(capture) { recordings = withContext(Dispatchers.IO) { store.list() } }
     var preview by remember { mutableStateOf<File?>(null) }
     var deleting by remember { mutableStateOf<File?>(null) }
     var exporting by remember { mutableStateOf<File?>(null) }
@@ -63,14 +69,14 @@ fun RecordingsScreen(onBack: () -> Unit) {
         Text("Stored only on this device. Export or share a video when you choose.")
         if (message.isNotEmpty()) Text(message)
         Button(onClick = { recordings = store.list() }) { Text("Refresh") }
-        if (recordings.isEmpty()) Text("No recordings yet. Turn on camera recording before your next round.")
+        if (recordings.isEmpty()) Text("No recordings yet. Turn on screen + camera recording before your next round.")
         LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             items(recordings, key = { it.name }) { file ->
-                Column {
+                Card(shape = RoundedCornerShape(24.dp)) { Column(Modifier.padding(16.dp)) {
                     Text(DateFormat.getDateTimeInstance().format(Date(file.lastModified())))
                     Text("${file.length() / 1024} KB")
-                    Row {
-                        TextButton(onClick = { preview = file }) { Text("Preview") }
+                    Button(onClick = { preview = file }, modifier = Modifier.fillMaxWidth()) { Text("Play recording") }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         TextButton(onClick = { exporting = file; exporter.launch(file.name) }) { Text("Save") }
                         TextButton(onClick = {
                             runCatching {
@@ -83,7 +89,7 @@ fun RecordingsScreen(onBack: () -> Unit) {
                         }) { Text("Share") }
                         TextButton(onClick = { deleting = file }) { Text("Delete") }
                     }
-                }
+                } }
             }
         }
     }
