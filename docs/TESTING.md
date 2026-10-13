@@ -82,3 +82,5 @@ cover uploaded-file reuse without re-upload, clear/replace/reset/discard actions
 and removing/discarding saved game selections. Browser validation injects the
 observed `cz-shortcut-listen` body attribute to check extension-triggered hydration
 warnings without suppressing warnings inside the app tree.
+
+Admin test-only dependencies belong to `admin/package.json` so filtered workspace installs include them. Production TypeScript excludes `*.spec.ts` and `*.spec.tsx`; run `npm run typecheck -w admin` to type-check both production and test code explicitly. `npm run test -w admin` type-checks the test files before executing every test.
