@@ -44,3 +44,6 @@ Thumbs.db
 
 # Supabase local artifacts
 supabase/.env
+
+# Private Android release signing key and credentials
+android/.release-signing/

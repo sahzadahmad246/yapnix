@@ -180,3 +180,23 @@ without pushing Git. Android code changes require a newly signed APK or Play rel
 - Supabase redirects: https://supabase.com/docs/guides/auth/redirect-urls
 - Android signing: https://developer.android.com/studio/publish/app-signing
 - GitHub Releases: https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository
+
+## Local signed release configuration
+
+The release variant pins `API_BASE_URL` to `https://yapnix-api.onrender.com/api`.
+Local signing configuration is read from the ignored file
+`android/.release-signing/signing.properties`; its `storeFile` is resolved relative
+to the Android root. The private key and credentials are never committed.
+Back up the entire `.release-signing` folder securely: future APK updates need the
+same key. A fresh clone requires restoring that private signing material before
+rebuilding a matching signed APK. Without it, Gradle's release output is unsigned.
+
+With the private signing files and existing public Supabase settings restored:
+
+```sh
+cd android
+./gradlew :app:testReleaseUnitTest :app:assembleRelease --max-workers=1
+```
+
+The signed output is `android/app/build/outputs/apk/release/app-release.apk`.
+Release notes for the first test build are in `docs/releases/v0.1.0.md`.

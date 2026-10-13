@@ -11,6 +11,12 @@ val localConfig = Properties().apply {
     if (configFile.exists()) configFile.inputStream().use(::load)
 }
 
+// Signing credentials are local-only and must never be committed.
+val releaseSigning = Properties().apply {
+    val configFile = rootProject.file(".release-signing/signing.properties")
+    if (configFile.exists()) configFile.inputStream().use(::load)
+}
+
 fun localValue(name: String, fallback: String = ""): String =
     localConfig.getProperty(name, fallback).replace("\\", "\\\\").replace("\"", "\\\"")
 
@@ -27,6 +33,24 @@ android {
         buildConfigField("String", "API_BASE_URL", "\"${localValue("API_BASE_URL", "http://10.0.2.2:3333/api")}\"")
         buildConfigField("String", "SUPABASE_URL", "\"${localValue("SUPABASE_URL")}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${localValue("SUPABASE_ANON_KEY")}\"")
+    }
+
+    signingConfigs {
+        if (releaseSigning.getProperty("storeFile") != null) {
+            create("release") {
+                storeFile = rootProject.file(releaseSigning.getProperty("storeFile"))
+                storePassword = releaseSigning.getProperty("storePassword")
+                keyAlias = releaseSigning.getProperty("keyAlias")
+                keyPassword = releaseSigning.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.findByName("release")
+            buildConfigField("String", "API_BASE_URL", "\"https://yapnix-api.onrender.com/api\"")
+        }
     }
 
     buildFeatures {
