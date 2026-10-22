@@ -22,16 +22,17 @@ object ReleaseVersions {
         val uri = URI(url)
         tag.matches(Regex("v[0-9]+[.][0-9]+[.][0-9]+")) &&
             uri.scheme == "https" && uri.host == "github.com" && uri.port == -1 && uri.userInfo == null &&
-            uri.path == "/sahzadahmad246/yapnix/releases/download/$tag/yapnix-${tag}.apk" && uri.query == null && uri.fragment == null
+            uri.rawPath == "/sahzadahmad246/yapnix/releases/download/$tag/yapnix-${tag}.apk" && uri.query == null && uri.fragment == null
     }.getOrDefault(false)
 }
 
-data class AppUpdate(val version: String, val url: String)
+data class AppUpdate(val version: String, val url: String, val sizeBytes: Long = 0, val sha256: String? = null)
 object AppUpdates {
     suspend fun check(installed: String): AppUpdate? = withContext(Dispatchers.IO) {
         val connection = URI("https://api.github.com/repos/sahzadahmad246/yapnix/releases?per_page=20").toURL().openConnection() as HttpURLConnection
         try {
             connection.connectTimeout = 10_000; connection.readTimeout = 10_000
+            connection.instanceFollowRedirects = false
             connection.setRequestProperty("Accept", "application/vnd.github+json")
             connection.setRequestProperty("User-Agent", "Yapnix/$installed")
             check(connection.responseCode == 200)
@@ -44,8 +45,11 @@ object AppUpdates {
                 if (!ReleaseVersions.newer(tag, selected?.version ?: installed)) continue
                 val assets = release.optJSONArray("assets") ?: continue
                 for (j in 0 until assets.length()) {
-                    val url = assets.getJSONObject(j).optString("browser_download_url")
-                    if (ReleaseVersions.trustedApk(url, tag)) selected = AppUpdate(tag, url)
+                    val asset = assets.getJSONObject(j)
+                    val url = asset.optString("browser_download_url")
+                    if (ReleaseVersions.trustedApk(url, tag)) {
+                        selected = AppUpdate(tag, url, asset.optLong("size", 0), UpdateSecurity.sha256Digest(asset.optString("digest")))
+                    }
                 }
             }
             selected

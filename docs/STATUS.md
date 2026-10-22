@@ -29,7 +29,7 @@ Next session: simplify the Studio content flow further. The user finds the curre
 1. Run the matching [complete SQL Editor bundle](../supabase/README.md), or apply only outstanding migrations in filename order. Migration 006 includes private Storage. Keep `content-images` private. No live project changes were made here.
 2. Configure the Google Web OAuth client and Supabase redirect URLs per [GOOGLE_OAUTH.md](GOOGLE_OAUTH.md), approve the Studio operator, and verify real login/upload/publication/sync against staging.
 3. Complete the physical-device log in [TESTING.md](TESTING.md). No authorized Android device was connected during recovery. CameraX frames, EGL/OpenGL encoder compatibility, microphone audio, export and update installation need real-device validation.
-4. Configure production HTTPS, origins and signing/distribution before release. v0.4.0 redesigns the game UI and uses EGL/OpenGL to encode the dedicated game composition, camera preview and microphone audio, with GitHub update prompts. Hardware validation is pending.
+4. Configure production HTTPS, origins and signing/distribution before release. v0.5.0 uses a shared portrait reel layout with a separate camera pane, Full HD/HD encoding, closable tools, profile photos, Reels grid and direct in-app update downloads. Hardware validation is pending.
 
 ## Supabase Storage handoff
 

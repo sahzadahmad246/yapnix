@@ -10,7 +10,7 @@ import coil.request.SuccessResult
 
 /** Refresh game metadata from the API, but reuse image bytes across signed URL renewals. */
 object GameImageCache {
-    fun request(context: Context, question: Question, edge: Int = 720): ImageRequest {
+    fun request(context: Context, question: Question, edge: Int = 1080): ImageRequest {
         val key = "${question.id}:${Uri.parse(question.imageUrl).path}"
         return ImageRequest.Builder(context).data(question.imageUrl)
             .memoryCacheKey("$key:$edge").diskCacheKey(key).size(edge).scale(coil.size.Scale.FIT)

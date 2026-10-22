@@ -9,7 +9,7 @@
 - EGL/OpenGL encoder input, MediaRecorder H.264/AAC output, worker-thread finalization and track validation.
 - HTTP API calls through HttpURLConnection on IO dispatchers.
 - App-private SharedPreferences for local progress, with serialized writes.
-- Supabase browser OAuth with PKCE for optional Google sign-in; Android Keystore encrypts stored tokens.
+- Supabase browser OAuth with PKCE for optional Google sign-in; Android Keystore encrypts stored tokens. Verified session user metadata supplies display name/photo with HTTPS URL checks and initials fallback.
 
 The Android application should not use the Supabase service-role key.
 
@@ -38,7 +38,7 @@ The Android app stores progress locally as a non-authoritative preference. It pe
 
 ## Recording
 
-Video remains local to the Android device. A microphone foreground service composes a dedicated game bitmap on main and uploads it through a worker-owned EGL/OpenGL encoder surface into H.264 with AAC microphone audio. Direct Canvas locks on encoder surfaces are not used. No MediaProjection or device-screen recording is used. The camera overlay can be dragged and resized independently of game content. Games and images are stored locally; every round image is decoded before Play. Each question reveals its answer after five seconds without speech recognition or scoring. Pausing, backgrounding or leaving stops recording. Finalized videos support preview, explicit export/share and confirmed deletion. See [reaction flow and physical-device checks](ANDROID-REACTION-FLOW.md).
+Video remains local to the Android device. A microphone foreground service composes a dedicated game bitmap on main and uploads it through a worker-owned EGL/OpenGL encoder surface into H.264 with AAC microphone audio. Direct Canvas locks on encoder surfaces are not used. No MediaProjection or device-screen recording is used. The camera reaction occupies a separate pane below the square question in the shared 9:16 preview/export layout, and its drag/resize bounds cannot intersect the image. Controls appear in a closable bottom drawer. Native CameraX analysis frames avoid preview-sized exports; the encoder tries 1080×1920/30fps first, then 720×1280/24fps for compatible HD fallback. Games and images are stored locally; every round image is decoded before Play. Each question reveals its answer after five seconds without speech recognition or scoring. Pausing, backgrounding or leaving stops recording. Finalized videos support preview, explicit export/share and confirmed deletion. See [reaction flow and physical-device checks](ANDROID-REACTION-FLOW.md).
 
 Game metadata and all question pictures are fetched before Play becomes available; Coil caches image bytes using the question ID and storage path rather than the temporary signed URL. The square picture stays visible during the prompt; the timer starts immediately after image readiness and text-to-speech completion, with no dark cover or artificial preparation countdown. Spoken feedback completes before advancing. Android text-to-speech failure falls back to visual play.
 
@@ -61,4 +61,4 @@ creating a category alone does not enable unsupported gameplay. See
 
 ## Android updates
 
-The Android app checks public GitHub releases at launch/resume (six-hour in-process throttle) and manually from Profile. It compares numeric three-part versions, ignores drafts, and accepts only exact HTTPS APK URLs under the Yapnix release repository. Test releases are included. Prompts appear outside gameplay. Installation uses the browser and Android installer with explicit user action; Later dismisses a version for the current process. No authentication, backend environment change or automatic installation is required.
+The Android app checks public GitHub releases at launch/resume (six-hour in-process throttle) and manually from You. It compares numeric three-part versions, ignores drafts, and accepts exact HTTPS APK links under the Yapnix repository. Downloads stay inside the app with progress, cancellation and retry; signed GitHub asset CDN redirects are narrowly allowed. File/network operations are serialized across retries. Before installation the APK must match the release size/available SHA-256, package ID, version name, a higher version code and the currently installed signing certificate. A dedicated cache-only UpdateFileProvider supplies a read-granted content URI to Android's installer. Unknown-source permission and installation are explicit user actions. No browser handoff or silent installation is used. Older installed binaries need v0.5.0 installed once to gain this behavior.

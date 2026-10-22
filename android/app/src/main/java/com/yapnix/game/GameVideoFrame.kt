@@ -10,98 +10,87 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import kotlin.math.min
 
-/** Renders the square game composition, never the phone display or editing controls. */
-internal fun drawGameVideoFrame(canvas: Canvas, state: GameUiState, camera: ReactionLayout) {
+/** Draws only game content and the reaction, without the phone display or tools. */
+internal fun drawGameVideoFrame(canvas: Canvas, state: GameUiState, camera: ReactionLayout, includeCamera: Boolean = true, renderWidth: Float = canvas.width.toFloat(), renderHeight: Float = canvas.height.toFloat()) {
     val checkpoint = canvas.save()
-    canvas.scale(canvas.width / 720f, canvas.height / 1280f)
+    canvas.scale(renderWidth / ReelGeometry.WIDTH, renderHeight / ReelGeometry.HEIGHT)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-    val purple = Color.rgb(115, 82, 239)
-    val ink = Color.rgb(37, 33, 56)
-    val muted = Color.rgb(130, 124, 148)
-    canvas.drawColor(Color.rgb(247, 245, 252))
-    paint.color = Color.WHITE
-    canvas.drawRoundRect(RectF(32f, 36f, 209f, 100f), 24f, 24f, paint)
-    paint.typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
-    paint.textSize = 32f
-    paint.color = purple
-    canvas.drawText("yapnix", 57f, 79f, paint)
+    val ink = Color.rgb(35, 38, 33)
+    val muted = Color.rgb(117, 119, 109)
+    val paper = Color.rgb(246, 245, 239)
+    val accent = Color.rgb(210, 236, 135)
+    canvas.drawColor(paper)
+    paint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+    paint.textSize = 33f
+    paint.color = ink
+    canvas.drawText("yapnix", ReelGeometry.LEFT, 67f, paint)
     paint.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-    paint.textSize = 25f
+    paint.textSize = 22f
     paint.color = muted
     paint.textAlign = Paint.Align.RIGHT
-    canvas.drawText("${state.questionIndex + 1} / ${state.playableLevel?.questions?.size ?: 0}", 680f, 78f, paint)
+    canvas.drawText("${state.questionIndex + 1} / ${state.playableLevel?.questions?.size ?: 0}", ReelGeometry.RIGHT, 65f, paint)
     paint.textAlign = Paint.Align.LEFT
-    paint.typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
-    paint.textSize = 43f
+    paint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
     paint.color = ink
     val prompt = state.playableLevel?.prompt ?: "What is this?"
-    fitText(paint, prompt, 520f, 43f)
-    canvas.drawText(prompt, 35f, 188f, paint)
-    paint.color = Color.rgb(233, 224, 255)
-    canvas.drawRoundRect(RectF(596f, 128f, 688f, 218f), 30f, 30f, paint)
-    paint.color = purple
-    paint.textSize = 43f
+    fitText(paint, prompt, 520f, 35f)
+    canvas.drawText(prompt, ReelGeometry.LEFT, 120f, paint)
+    paint.color = accent
+    canvas.drawCircle(642f, 108f, 30f, paint)
+    paint.color = ink
+    paint.textSize = 30f
     paint.textAlign = Paint.Align.CENTER
-    canvas.drawText(if (state.phase == SessionPhase.FEEDBACK) "✓" else if (state.phase == SessionPhase.PLAYING) "${state.remainingSeconds}" else "5", 642f, 189f, paint)
-    paint.textAlign = Paint.Align.LEFT
+    canvas.drawText(if (state.phase == SessionPhase.FEEDBACK) "✓" else if (state.phase == SessionPhase.PLAYING) "${state.remainingSeconds}" else "5", 642f, 119f, paint)
 
-    val stage = RectF(32f, 250f, 688f, 906f)
-    val clip = Path().apply { addRoundRect(stage, 38f, 38f, Path.Direction.CW) }
-    val imageCheckpoint = canvas.save()
-    canvas.clipPath(clip)
-    paint.color = Color.rgb(233, 224, 255)
-    canvas.drawRect(stage, paint)
     val question = state.playableLevel?.questions?.getOrNull(state.questionIndex)
-    state.readyImages[question?.id]?.let { drawCrop(canvas, it, stage, paint) }
-    if (state.recordEnabled && !state.paused) camera.frame?.takeUnless { it.isRecycled }?.let { frame ->
-        val width = stage.width() * camera.size
-        val height = width * camera.ratio
-        val left = stage.left + camera.x * (stage.width() - width)
-        val top = stage.top + camera.y * (stage.height() - height)
-        val rect = RectF(left, top, left + width, top + height)
-        val radius = if (camera.round) width / 2 else 25f
-        val cameraClip = Path().apply { addRoundRect(rect, radius, radius, Path.Direction.CW) }
-        val cameraCheckpoint = canvas.save()
-        canvas.clipPath(cameraClip)
-        drawCrop(canvas, frame, rect, paint)
-        canvas.restoreToCount(cameraCheckpoint)
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 5f
-        paint.color = Color.WHITE
-        canvas.drawRoundRect(rect, radius, radius, paint)
-        paint.style = Paint.Style.FILL
-    }
+    val imageRect = RectF(ReelGeometry.LEFT, ReelGeometry.IMAGE_TOP, ReelGeometry.RIGHT, ReelGeometry.IMAGE_BOTTOM)
+    val imageCheckpoint = canvas.save()
+    canvas.clipPath(Path().apply { addRoundRect(imageRect, 20f, 20f, Path.Direction.CW) })
+    paint.color = Color.rgb(232, 232, 222)
+    canvas.drawRect(imageRect, paint)
+    state.readyImages[question?.id]?.let { drawCrop(canvas, it, imageRect, paint) }
     canvas.restoreToCount(imageCheckpoint)
 
     paint.textAlign = Paint.Align.CENTER
     if (state.phase == SessionPhase.FEEDBACK) {
         paint.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        paint.textSize = 19f
+        paint.textSize = 17f
         paint.color = muted
-        canvas.drawText("THE ANSWER IS", 360f, 972f, paint)
-        paint.typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
-        paint.color = purple
+        canvas.drawText("THE ANSWER", 360f, 810f, paint)
+        paint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        paint.color = ink
         val answer = question?.primaryAnswer.orEmpty()
-        fitText(paint, answer, 632f, 50f)
-        canvas.drawText(answer, 360f, 1039f, paint)
+        fitText(paint, answer, 608f, 35f)
+        canvas.drawText(answer, 360f, 854f, paint)
     } else {
         paint.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        paint.textSize = 29f
-        paint.color = purple
-        canvas.drawText("Say it out loud!", 360f, 1004f, paint)
+        paint.textSize = 26f
+        paint.color = ink
+        canvas.drawText("Say it out loud", 360f, 830f, paint)
     }
-    val total = state.playableLevel?.questions?.size ?: 1
-    val progress = (state.questionIndex + if (state.phase == SessionPhase.FEEDBACK) 1f else 0f) / total.coerceAtLeast(1)
-    paint.color = Color.rgb(233, 224, 255)
-    canvas.drawRoundRect(RectF(96f, 1120f, 624f, 1128f), 4f, 4f, paint)
-    if (progress > 0f) {
-        paint.color = purple
-        canvas.drawRoundRect(RectF(96f, 1120f, 96f + 528f * progress, 1128f), 4f, 4f, paint)
+
+    val pane = RectF(ReelGeometry.LEFT, ReelGeometry.CAMERA_TOP, ReelGeometry.RIGHT, ReelGeometry.CAMERA_BOTTOM)
+    paint.color = ink
+    canvas.drawRoundRect(pane, 20f, 20f, paint)
+    val paneCheckpoint = canvas.save()
+    canvas.clipPath(Path().apply { addRoundRect(pane, 20f, 20f, Path.Direction.CW) })
+    if (includeCamera && state.recordEnabled && !state.paused) camera.frame?.takeUnless { it.isRecycled }?.let { frame ->
+        val bounds = ReelGeometry.cameraRect(camera.x, camera.y, camera.size, camera.round)
+        val rect = RectF(bounds.left, bounds.top, bounds.right, bounds.bottom)
+        val radius = if (camera.round) rect.width() / 2 else 14f
+        val cameraCheckpoint = canvas.save()
+        canvas.clipPath(Path().apply { addRoundRect(rect, radius, radius, Path.Direction.CW) })
+        drawCrop(canvas, frame, rect, paint)
+        canvas.restoreToCount(cameraCheckpoint)
     }
+    canvas.restoreToCount(paneCheckpoint)
     paint.color = muted
-    paint.textSize = 21f
+    paint.textSize = 16f
     paint.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-    canvas.drawText("5 second challenge", 360f, 1200f, paint)
+    paint.textAlign = Paint.Align.LEFT
+    canvas.drawText("5 SECOND CHALLENGE", ReelGeometry.LEFT, 1265f, paint)
+    paint.textAlign = Paint.Align.RIGHT
+    canvas.drawText("yapnix", ReelGeometry.RIGHT, 1265f, paint)
     canvas.restoreToCount(checkpoint)
 }
 

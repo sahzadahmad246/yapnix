@@ -5,7 +5,7 @@ import org.junit.Test
 
 class ImageDecodeBudgetTest {
     @Test fun normalRoundsKeepFullVideoResolution() {
-        assertEquals(720, ImageDecodeBudget.edge(5, 256L * 1024 * 1024))
+        assertEquals(1080, ImageDecodeBudget.edge(5, 256L * 1024 * 1024))
     }
     @Test fun maximumRoundsFitHeapBudgetAlongsideCameraAndEncoder() {
         for (heapMb in listOf(64, 128, 256, 512)) {

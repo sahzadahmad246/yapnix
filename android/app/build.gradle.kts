@@ -28,8 +28,8 @@ android {
         applicationId = "com.yapnix.game"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.4.0"
+        versionCode = 6
+        versionName = "0.5.0"
         buildConfigField("String", "API_BASE_URL", "\"${localValue("API_BASE_URL", "http://10.0.2.2:3333/api")}\"")
         buildConfigField("String", "SUPABASE_URL", "\"${localValue("SUPABASE_URL")}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${localValue("SUPABASE_ANON_KEY")}\"")

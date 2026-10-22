@@ -13,3 +13,11 @@ The Videos screen offers thumbnails, playback and seeking, explicit export/share
 ## Device validation pending
 
 The user chose to test the APK rather than attach a phone to ADB. Verify camera rotation/mirroring, shape and size controls, microphone audibility, EGL encoder compatibility, A/V sync, playback/seek, export/share, update installation and startup/stop/background/replay behavior on physical devices. Automated compilation and unit tests cannot prove the hardware capture path.
+
+## v0.5 portrait studio
+
+Live preview and export share a 9:16 coordinate layout. The square question ends above a separate reaction pane; camera transformations are constrained to that pane. Camera controls open in a closable bottom sheet. New recordings try 1080×1920 at 30fps, then 720×1280 at 24fps if Full HD setup fails. Existing flattened videos remain unchanged. The Reels library displays a three-column portrait grid and exports original MP4 bytes.
+
+Camera frames use CameraX ImageAnalysis rather than the view-sized PreviewView bitmap, allowing native-resolution camera source independent of the small UI. Frame ownership remains explicit between analyzer and main; the encoder still owns its separate scratch bitmap. Game images decode at up to 1080 pixels under the existing heap budget.
+
+Update downloads are in-app with progress/cancel/retry. The downloaded APK must match installed package/signature, have a higher version code, and match release version, size and available checksum. Installation is explicitly initiated through Android's installer. Existing v0.4 and older apps need this APK installed once before they can use the new updater.

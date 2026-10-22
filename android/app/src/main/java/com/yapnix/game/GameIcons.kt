@@ -1,6 +1,7 @@
 package com.yapnix.game
 
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -8,7 +9,7 @@ import androidx.compose.ui.res.painterResource
 
 /** Small app-owned vector set, shared by the game and local video studio. */
 @Composable
-internal fun GameIcon(name: String, modifier: Modifier = Modifier, tint: Color = Color.Unspecified, description: String? = null) {
+internal fun GameIcon(name: String, modifier: Modifier = Modifier, tint: Color = LocalContentColor.current, description: String? = null) {
     val resource = when (name) {
         "play" -> R.drawable.game_play
         "arrow" -> R.drawable.game_arrow

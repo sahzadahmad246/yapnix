@@ -40,10 +40,11 @@ class ScreenRecordingService : Service() {
     private var frameCanvas: Canvas? = null
 
     // Accessed only on the encoder thread. The main-thread painter hands one frame over at a time.
-    private var recorder: MediaRecorder? = null
+    @Volatile private var recorder: MediaRecorder? = null
+    private var frameIntervalMs = 1000L / RecordingQuality.profiles.first().frameRate
     private var renderer: EncoderSurface? = null
     private var output: File? = null
-    private var encoderStarted = false
+    @Volatile private var encoderStarted = false
     private var framesWritten = 0
 
     private val frame = object : Runnable {
@@ -53,7 +54,7 @@ class ScreenRecordingService : Service() {
             val bitmap = frameBitmap
             val canvas = frameCanvas
             if (painter == null || bitmap == null || canvas == null) {
-                main.postDelayed(this, FRAME_INTERVAL_MS)
+                main.postDelayed(this, frameIntervalMs)
                 return
             }
             val startedAt = SystemClock.uptimeMillis()
@@ -73,7 +74,7 @@ class ScreenRecordingService : Service() {
                     checkNotNull(renderer).render(bitmap, timestamp)
                     framesWritten++
                     // Do not let the painter overwrite the bitmap before GL has uploaded it.
-                    main.postAtTime(this, maxOf(startedAt + FRAME_INTERVAL_MS, SystemClock.uptimeMillis()))
+                    main.postAtTime(this, maxOf(startedAt + frameIntervalMs, SystemClock.uptimeMillis()))
                 } catch (error: Exception) {
                     Log.e(TAG, "Could not encode video frame", error)
                     main.post { finishRecording("Recording stopped. Please try again.") }
@@ -134,44 +135,65 @@ class ScreenRecordingService : Service() {
     }
 
     private fun prepareRecording() {
-        try {
-            output = RecordingStore(this).newFile()
-            @Suppress("DEPRECATION")
-            val encoder = (if (Build.VERSION.SDK_INT >= 31) MediaRecorder(this) else MediaRecorder()).also { recorder = it }
-            encoder.setOnErrorListener { _, what, extra ->
-                Log.e(TAG, "MediaRecorder error $what / $extra")
-                main.post { finishRecording("Recording interrupted. Please try again.") }
-            }
-            encoder.setAudioSource(MediaRecorder.AudioSource.MIC)
-            encoder.setVideoSource(MediaRecorder.VideoSource.SURFACE)
-            encoder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            encoder.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
-            encoder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            encoder.setAudioSamplingRate(44100)
-            encoder.setAudioEncodingBitRate(128000)
-            encoder.setVideoSize(WIDTH, HEIGHT)
-            encoder.setVideoFrameRate(FRAME_RATE)
-            encoder.setVideoEncodingBitRate(4_000_000)
-            encoder.setOutputFile(checkNotNull(output).absolutePath)
-            encoder.prepare()
-            // An encoder surface is a GPU producer, not a Canvas drawing surface.
-            renderer = EncoderSurface(encoder.surface, WIDTH, HEIGHT)
-            checkNotNull(renderer).prepare()
-            encoder.start()
-            encoderStarted = true
-            val bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
-            main.post {
-                frameBitmap = bitmap
-                frameCanvas = Canvas(bitmap)
-                if (!stopping) {
-                    mutableStatus.value = CaptureStatus(active = true)
-                    main.post(frame)
+        var lastError: Exception? = null
+        for (quality in RecordingQuality.profiles) {
+            try {
+                output = RecordingStore(this).newFile()
+                @Suppress("DEPRECATION")
+                val encoder = (if (Build.VERSION.SDK_INT >= 31) MediaRecorder(this) else MediaRecorder()).also { recorder = it }
+                encoder.setOnErrorListener { source, what, extra ->
+                    main.post {
+                        if (recorder === source && encoderStarted) {
+                            Log.e(TAG, "MediaRecorder error $what / $extra")
+                            finishRecording("Recording interrupted. Please try again.")
+                        }
+                    }
                 }
+                encoder.setAudioSource(MediaRecorder.AudioSource.MIC)
+                encoder.setVideoSource(MediaRecorder.VideoSource.SURFACE)
+                encoder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                encoder.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
+                encoder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                encoder.setAudioSamplingRate(44100)
+                encoder.setAudioEncodingBitRate(128000)
+                encoder.setVideoSize(quality.width, quality.height)
+                encoder.setVideoFrameRate(quality.frameRate)
+                encoder.setVideoEncodingBitRate(quality.bitrate)
+                encoder.setOutputFile(checkNotNull(output).absolutePath)
+                encoder.prepare()
+                renderer = EncoderSurface(encoder.surface, quality.width, quality.height)
+                checkNotNull(renderer).prepare()
+                encoder.start()
+                encoderStarted = true
+                frameIntervalMs = 1000L / quality.frameRate
+                val bitmap = Bitmap.createBitmap(quality.width, quality.height, Bitmap.Config.ARGB_8888)
+                main.post {
+                    frameBitmap = bitmap
+                    frameCanvas = Canvas(bitmap)
+                    if (!stopping) {
+                        mutableStatus.value = CaptureStatus(active = true)
+                        main.post(frame)
+                    }
+                }
+                Log.i(TAG, "Recording ${quality.width}x${quality.height} at ${quality.frameRate}fps")
+                return
+            } catch (error: Exception) {
+                lastError = error
+                Log.w(TAG, "Encoder profile ${quality.width}x${quality.height} unavailable", error)
+                // Release all producer/encoder resources before trying the next HD profile.
+                runCatching { renderer?.close() }
+                renderer = null
+                val encoder = recorder
+                recorder = null
+                if (encoderStarted) runCatching { encoder?.stop() }
+                runCatching { encoder?.release() }
+                encoderStarted = false
+                output?.delete()
+                output = null
             }
-        } catch (error: Exception) {
-            Log.e(TAG, "Could not prepare video/audio encoder", error)
-            main.post { finishRecording("Could not start video. Close other camera or audio apps and try again.") }
         }
+        Log.e(TAG, "Could not prepare any HD video/audio encoder", lastError)
+        main.post { finishRecording("Could not start HD video. Close other camera or audio apps and try again.") }
     }
 
     /** Main-thread entry; stopping and MP4 finalization never block the game UI. */
@@ -272,10 +294,6 @@ class ScreenRecordingService : Service() {
         private const val CHANNEL = "game-video"
         private const val NOTIFICATION_ID = 1001
         private const val ACTION_STOP = "stop"
-        private const val WIDTH = 720
-        private const val HEIGHT = 1280
-        private const val FRAME_RATE = 24
-        private const val FRAME_INTERVAL_MS = 1000L / FRAME_RATE
         @Volatile private var runningService: ScreenRecordingService? = null
         @Volatile private var stopRequested = false
         var drawFrame: ((Canvas) -> Unit)? = null

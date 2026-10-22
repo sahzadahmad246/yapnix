@@ -58,9 +58,12 @@ Status: **not run**. No connected-device or live-project validation is claimed.
 | Publication | Incomplete games blocked; published category/game available to guest | Pending |
 | Recording | Camera grant/deny; start/stop/background; playable finalized local video | Pending |
 | Audio coexistence | Microphone reaction audio is present and synchronized; TTS and sound cues do not interrupt capture | Pending |
-| Export/share | Preview, document export, share URI, cancel, confirmed delete | Pending |
+| Export/share | Portrait reel preview/seek, document export, share URI, cancel, confirmed delete; original quality preserved | Pending |
+| Reel layout / HD | 9:16 output, camera below question, closeable tools, 1080p or720p fallback, mic/sync | Pending |
+| Profile photo | Google photo/name from stored session, missing/invalid image fallback, sign-out clears identity | Pending |
+| Direct update | Download/progress/cancel/retry, signer rejection, unknown-source permission, explicit install, interrupted download | Pending |
 
-Record phone model, Android version, date, and actual results here before release. Dedicated game-canvas capture includes movable/resizable front-camera frames and microphone audio. Text-to-speech, five-second reveals, recorded sound/sync, camera gestures and update installation still need physical-device validation. See [v0.4.0 phone checklist](releases/v0.4.0.md).
+Record phone model, Android version, date, and actual results here before release. Dedicated game-canvas capture includes movable/resizable front-camera frames and microphone audio. Text-to-speech, five-second reveals, recorded sound/sync, camera gestures and update installation still need physical-device validation. See [v0.5.0 phone checklist](releases/v0.5.0.md).
 
 ## SQL Editor bundle validation — 9 October 2026
 

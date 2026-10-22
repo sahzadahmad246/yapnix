@@ -14,7 +14,10 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
-data class AuthSession(val accessToken: String, val refreshToken: String, val userId: String, val email: String, val expiresAt: Long)
+data class AuthSession(
+    val accessToken: String, val refreshToken: String, val userId: String, val email: String,
+    val expiresAt: Long, val displayName: String? = null, val avatarUrl: String? = null,
+)
 
 class AuthRepository(context: Context) {
     private val store = SecureAuthStore(context)
@@ -87,8 +90,15 @@ class AuthRepository(context: Context) {
 
     private fun parse(value: JSONObject): AuthSession {
         val user = value.getJSONObject("user")
+        val metadata = user.optJSONObject("user_metadata")
+        val name = listOf("full_name", "name").firstNotNullOfOrNull { key ->
+            metadata?.optString(key)?.trim()?.takeIf { it.isNotBlank() && it != "null" }?.take(100)
+        }
+        val avatar = listOf("avatar_url", "picture").firstNotNullOfOrNull { key ->
+            ProfileImageUrls.sanitize(metadata?.optString(key))
+        }
         return AuthSession(value.getString("access_token"), value.getString("refresh_token"), user.getString("id"),
-            user.optString("email", "Google account"), value.getLong("expires_at") * 1000)
+            user.optString("email", "Google account"), value.getLong("expires_at") * 1000, name, avatar)
     }
 
     private fun request(path: String, body: JSONObject, token: String? = null): JSONObject {
