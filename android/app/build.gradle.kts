@@ -28,8 +28,8 @@ android {
         applicationId = "com.yapnix.game"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.3.1"
         buildConfigField("String", "API_BASE_URL", "\"${localValue("API_BASE_URL", "http://10.0.2.2:3333/api")}\"")
         buildConfigField("String", "SUPABASE_URL", "\"${localValue("SUPABASE_URL")}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${localValue("SUPABASE_ANON_KEY")}\"")
@@ -48,12 +48,13 @@ android {
 
     buildTypes {
         getByName("release") {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
             signingConfig = signingConfigs.findByName("release")
             buildConfigField("String", "API_BASE_URL", "\"https://yapnix-api.onrender.com/api\"")
         }
     }
-
-    sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/speech-assets"))
 
     buildFeatures {
         compose = true
@@ -70,14 +71,7 @@ android {
     }
 }
 
-val prepareSpeechModel by tasks.registering(Exec::class) {
-    commandLine("python3", rootProject.file("scripts/prepare-speech-model.py").absolutePath)
-}
-tasks.named("preBuild") { dependsOn(prepareSpeechModel) }
-
 dependencies {
-    implementation("com.alphacephei:vosk-android:0.3.75@aar")
-    implementation("net.java.dev.jna:jna:5.18.1@aar")
     testImplementation("junit:junit:4.13.2")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.9.3")
@@ -89,7 +83,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.camera:camera-camera2:1.4.1")
     implementation("androidx.camera:camera-lifecycle:1.4.1")
-    implementation("androidx.camera:camera-video:1.4.1")
     implementation("androidx.camera:camera-view:1.4.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
