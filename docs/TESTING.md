@@ -40,7 +40,7 @@ cd android
 ./gradlew testDebugUnitTest assembleDebug --no-daemon --max-workers=1
 ```
 
-Answer-matching unit tests cover punctuation, aliases, partial/empty answers, Unicode and device locale. PKCE tests cover the RFC challenge vector and random verifiers; sync policy tests cover timestamp and completion conflicts. Physical-device testing remains required for speech recognition, microphone permissions, lifecycle/timers, Google login, and camera recording/export.
+Answer-matching unit tests cover punctuation, aliases, partial/empty answers, Unicode and device locale. PKCE tests cover the RFC challenge vector and random verifiers; sync policy tests cover timestamp and completion conflicts. Reveal-timer/readiness and image-memory budget tests cover five-second deadlines, stale callbacks and large rounds. Physical-device testing remains required for microphone permissions, lifecycle/timers, Google login, and camera recording/export; speech recognition is not used.
 
 ## Physical-device and staging validation log
 
@@ -48,19 +48,19 @@ Status: **not run**. No connected-device or live-project validation is claimed.
 
 | Check | Required observation | Result |
 | --- | --- | --- |
-| Guest play | Start, answer, timeout, replay without login | Pending |
-| Resume | Background, resume, kill/relaunch; resolved questions never score twice | Pending |
-| Microphone | Grant/deny/revoke; missing speech service gives a clear message | Pending |
+| Guest play | Start, five-second reveal, replay without login | Pending |
+| Resume | Background, resume, kill/relaunch; resume at the next unresolved picture | Pending |
+| Microphone | Grant/deny/revoke recording access; gameplay without recording needs no microphone | Pending |
 | Google login | Success/cancel, callback, app restart, expired access-token refresh, sign-out | Pending |
 | Progress sync | Two devices, newer-save merge, changed content, offline failure; local saves preserved | Pending |
 | Studio access | Approved admin allowed; ordinary Google account denied | Pending |
 | Images | Upload/reuse; draft image never exposed through guest APIs; private bucket direct access denied | Pending |
 | Publication | Incomplete games blocked; published category/game available to guest | Pending |
 | Recording | Camera grant/deny; start/stop/background; playable finalized local video | Pending |
-| Audio coexistence | One microphone supplies offline English answers and recorded audio; prompt completes before listening | Pending |
+| Audio coexistence | Microphone reaction audio is present and synchronized; TTS and sound cues do not interrupt capture | Pending |
 | Export/share | Preview, document export, share URI, cancel, confirmed delete | Pending |
 
-Record phone model, Android version, date, and actual results here before release. Dedicated game-canvas capture includes movable/resizable front-camera frames and microphone audio. Text-to-speech, five-second reveals, recorded sound/sync, camera gestures and update installation still need physical-device validation. See [v0.3.0 phone checklist](releases/v0.3.0.md).
+Record phone model, Android version, date, and actual results here before release. Dedicated game-canvas capture includes movable/resizable front-camera frames and microphone audio. Text-to-speech, five-second reveals, recorded sound/sync, camera gestures and update installation still need physical-device validation. See [v0.4.0 phone checklist](releases/v0.4.0.md).
 
 ## SQL Editor bundle validation — 9 October 2026
 

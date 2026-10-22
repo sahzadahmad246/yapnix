@@ -6,7 +6,7 @@
 - Coroutines and Flow.
 - MVVM/ViewModel state ownership.
 - CameraX for front-camera frames; a dedicated game composition encoded with microphone audio.
-- Android media APIs for video output.
+- EGL/OpenGL encoder input, MediaRecorder H.264/AAC output, worker-thread finalization and track validation.
 - HTTP API calls through HttpURLConnection on IO dispatchers.
 - App-private SharedPreferences for local progress, with serialized writes.
 - Supabase browser OAuth with PKCE for optional Google sign-in; Android Keystore encrypts stored tokens.
@@ -38,9 +38,9 @@ The Android app stores progress locally as a non-authoritative preference. It pe
 
 ## Recording
 
-Video remains local to the Android device. A microphone foreground service encodes a dedicated game canvas and front-camera frames into H.264 with AAC microphone audio. No MediaProjection or device-screen recording is used. The camera overlay can be dragged and resized independently of game content. Games and images are stored locally; every round image is decoded before Play. Each question reveals its answer after five seconds without speech recognition or scoring. Pausing, backgrounding or leaving stops recording. Finalized videos support preview, explicit export/share and confirmed deletion. See [reaction flow and physical-device checks](ANDROID-REACTION-FLOW.md).
+Video remains local to the Android device. A microphone foreground service composes a dedicated game bitmap on main and uploads it through a worker-owned EGL/OpenGL encoder surface into H.264 with AAC microphone audio. Direct Canvas locks on encoder surfaces are not used. No MediaProjection or device-screen recording is used. The camera overlay can be dragged and resized independently of game content. Games and images are stored locally; every round image is decoded before Play. Each question reveals its answer after five seconds without speech recognition or scoring. Pausing, backgrounding or leaving stops recording. Finalized videos support preview, explicit export/share and confirmed deletion. See [reaction flow and physical-device checks](ANDROID-REACTION-FLOW.md).
 
-Game metadata and all question pictures are fetched before Play becomes available; Coil caches image bytes using the question ID and storage path rather than the temporary signed URL. Each question also waits for image-display success and text-to-speech completion before starting its countdown. Spoken feedback completes before advancing. Android text-to-speech failure falls back to visual play.
+Game metadata and all question pictures are fetched before Play becomes available; Coil caches image bytes using the question ID and storage path rather than the temporary signed URL. The square picture stays visible during the prompt; the timer starts immediately after image readiness and text-to-speech completion, with no dark cover or artificial preparation countdown. Spoken feedback completes before advancing. Android text-to-speech failure falls back to visual play.
 
 ## Public API trust boundary
 

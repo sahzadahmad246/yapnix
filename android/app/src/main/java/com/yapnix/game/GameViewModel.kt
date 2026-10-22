@@ -46,7 +46,7 @@ data class GameUiState(
     val score: Int = 0,
     val correctCount: Int = 0,
     val remainingSeconds: Int = 5,
-    val preparationSeconds: Int = 3,
+    val preparationSeconds: Int = 0,
     val listenAttempt: Int = 0,
     val phase: SessionPhase = SessionPhase.PREPARING,
     val feedback: String = "",
@@ -78,6 +78,12 @@ private sealed interface ProgressWrite {
 class GameViewModel(application: Application) : AndroidViewModel(application) {
     private val api = GameApi()
     private val localGames = LocalGameStore(application)
+    private data class PreparedGame(val playable: PlayableLevel, val images: Map<String, android.graphics.Bitmap>)
+    // Keep recently decoded rounds through navigation without retaining unbounded image memory.
+    private val preparedGames = object : android.util.LruCache<String, PreparedGame>(32 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: PreparedGame): Int =
+            value.images.values.sumOf { it.allocationByteCount }.coerceAtLeast(1)
+    }
     private val progressStore = ProgressStore(application)
     private val auth = AuthRepository(application)
     private var contentJob: Job? = null
@@ -171,11 +177,18 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 error = null,
             )
             runCatching {
-                val playable = localGames.load(level) ?: api.getPlayableLevel(level).let { localGames.save(it) }
-                check(playable.questions.isNotEmpty()) { "This game has no pictures yet" }
-                mutableState.value = mutableState.value.copy(totalImages = playable.questions.size)
-                val images = GameImageCache.preload(getApplication(), playable.questions) { count -> mutableState.value = mutableState.value.copy(loadedImages = count) }
-                mutableState.value = mutableState.value.copy(readyImages = images)
+                val prepared = preparedGames.get(level.id) ?: run {
+                    val playable = localGames.load(level) ?: api.getPlayableLevel(level).let { localGames.save(it) }
+                    check(playable.questions.isNotEmpty()) { "This game has no pictures yet" }
+                    mutableState.value = mutableState.value.copy(totalImages = playable.questions.size)
+                    val images = GameImageCache.preload(getApplication(), playable.questions) { count ->
+                        mutableState.value = mutableState.value.copy(loadedImages = count)
+                    }
+                    PreparedGame(playable, images).also { preparedGames.put(level.id, it) }
+                }
+                val playable = prepared.playable
+                mutableState.value = mutableState.value.copy(readyImages = prepared.images,
+                    loadedImages = playable.questions.size, totalImages = playable.questions.size)
                 val flushed = CompletableDeferred<Unit>()
                 writes.send(ProgressWrite.Flush(flushed))
                 flushed.await()
@@ -216,10 +229,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             questionIndex = index,
             score = saved?.score ?: 0,
             correctCount = saved?.correctCount ?: 0,
-            preparationSeconds = 1,
+            preparationSeconds = 0,
             remainingSeconds = 5,
             phase = SessionPhase.PREPARING,
-            feedback = "Get ready",
+            feedback = "",
             listenAttempt = 0,
             error = null,
             paused = false, imageReadyId = null, promptReadyId = null,
@@ -227,20 +240,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         saveProgress(completed = false)
     }
 
+    /** Start immediately after the visible image and spoken prompt are ready. */
     fun tickPreparation() {
         val current = mutableState.value
         if (current.screen != AppScreen.SESSION || current.paused || current.phase != SessionPhase.PREPARING || !RoundReadiness.ready(current.playableLevel?.questions?.getOrNull(current.questionIndex)?.id, current.imageReadyId, current.promptReadyId)) return
-        if (current.preparationSeconds <= 1) {
-            questionDeadline = SystemClock.elapsedRealtime() + RevealTimer.SECONDS * 1000L
-            mutableState.value = current.copy(
-                preparationSeconds = 0,
-                remainingSeconds = 5,
-                phase = SessionPhase.PLAYING,
-                feedback = "",
-            )
-        } else {
-            mutableState.value = current.copy(preparationSeconds = current.preparationSeconds - 1)
-        }
+        questionDeadline = SystemClock.elapsedRealtime() + RevealTimer.SECONDS * 1000L
+        mutableState.value = current.copy(
+            remainingSeconds = RevealTimer.SECONDS, phase = SessionPhase.PLAYING, feedback = "",
+        )
     }
 
     fun tickQuestion() {
@@ -273,8 +280,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             mutableState.value = current.copy(
                 questionIndex = current.questionIndex + 1,
                 remainingSeconds = 5,
-                phase = SessionPhase.PREPARING, preparationSeconds = 1, imageReadyId = null, promptReadyId = null,
-                feedback = "Loading picture",
+                phase = SessionPhase.PREPARING, preparationSeconds = 0, imageReadyId = null, promptReadyId = null,
+                feedback = "",
                 listenAttempt = current.listenAttempt + 1,
             )
             saveProgress(completed = false)
@@ -285,12 +292,18 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun promptReady(id: String) {
         val current = mutableState.value
-        if (current.phase == SessionPhase.PREPARING && current.playableLevel?.questions?.getOrNull(current.questionIndex)?.id == id) mutableState.value = current.copy(promptReadyId = id)
+        if (current.phase == SessionPhase.PREPARING && current.playableLevel?.questions?.getOrNull(current.questionIndex)?.id == id) {
+            mutableState.value = current.copy(promptReadyId = id)
+            tickPreparation()
+        }
     }
 
     fun imageReady(id: String) {
         val current = mutableState.value
-        if (current.playableLevel?.questions?.getOrNull(current.questionIndex)?.id == id) mutableState.value = current.copy(imageReadyId = id)
+        if (current.playableLevel?.questions?.getOrNull(current.questionIndex)?.id == id) {
+            mutableState.value = current.copy(imageReadyId = id)
+            tickPreparation()
+        }
     }
 
     fun imageFailed() { mutableState.value = mutableState.value.copy(paused = true, notice = "This picture could not be displayed. Return to the game and try again; your progress is saved.") }
@@ -360,6 +373,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (current.screen != AppScreen.SESSION) return
         questionDeadline = SystemClock.elapsedRealtime() + current.remainingSeconds * 1000L
         mutableState.value = current.copy(paused = false, listenAttempt = current.listenAttempt + 1)
+        tickPreparation()
     }
 
     fun speechUnavailable(message: String) {
