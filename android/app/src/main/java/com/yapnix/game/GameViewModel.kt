@@ -1,5 +1,7 @@
 package com.yapnix.game
 
+import com.yapnix.game.updates.AppUpdate
+import com.yapnix.game.updates.AppUpdates
 import android.app.Application
 import android.net.Uri
 import android.os.SystemClock
@@ -9,6 +11,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.yapnix.game.data.ApiException
 import com.yapnix.game.data.Game
+import com.yapnix.game.gameplay.RevealTimer
 import com.yapnix.game.gameplay.RoundReadiness
 import com.yapnix.game.data.GameImageCache
 import com.yapnix.game.data.GameApi
@@ -16,7 +19,7 @@ import com.yapnix.game.data.Level
 import com.yapnix.game.data.PlayableLevel
 import com.yapnix.game.data.ProgressStore
 import com.yapnix.game.data.SavedProgress
-import com.yapnix.game.gameplay.AnswerMatcher
+import com.yapnix.game.data.LocalGameStore
 import com.yapnix.game.gameplay.ProgressSyncPolicy
 import com.yapnix.game.auth.AuthRepository
 import com.yapnix.game.auth.AuthSession
@@ -49,6 +52,7 @@ data class GameUiState(
     val feedback: String = "",
     val loading: Boolean = false,
     val loadedImages: Int = 0,
+    val readyImages: Map<String, android.graphics.Bitmap> = emptyMap(),
     val totalImages: Int = 0,
     val imageReadyId: String? = null,
     val promptReadyId: String? = null,
@@ -61,6 +65,9 @@ data class GameUiState(
     val showSignInPrompt: Boolean = false,
     val paused: Boolean = false,
     val recordEnabled: Boolean = false,
+    val availableUpdate: AppUpdate? = null,
+    val dismissedUpdate: String? = null,
+    val checkingUpdate: Boolean = false,
 )
 
 private sealed interface ProgressWrite {
@@ -70,6 +77,7 @@ private sealed interface ProgressWrite {
 
 class GameViewModel(application: Application) : AndroidViewModel(application) {
     private val api = GameApi()
+    private val localGames = LocalGameStore(application)
     private val progressStore = ProgressStore(application)
     private val auth = AuthRepository(application)
     private var contentJob: Job? = null
@@ -99,19 +107,46 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { mutableState.value = mutableState.value.copy(progress = progressStore.getAll()) }
     }
 
+    private var lastUpdateCheck = 0L
+    fun checkForUpdates(force: Boolean = false) {
+        if (mutableState.value.checkingUpdate) return
+        val now = SystemClock.elapsedRealtime()
+        if (!force && lastUpdateCheck > 0 && now - lastUpdateCheck < 6 * 60 * 60 * 1000L) return
+        mutableState.value = mutableState.value.copy(checkingUpdate = true)
+        viewModelScope.launch {
+            runCatching { AppUpdates.check(BuildConfig.VERSION_NAME) }
+                .onSuccess { update ->
+                    lastUpdateCheck = SystemClock.elapsedRealtime()
+                    mutableState.value = mutableState.value.copy(availableUpdate = update, checkingUpdate = false,
+                        dismissedUpdate = if (force) null else mutableState.value.dismissedUpdate)
+                    if (force) showNotice(if (update == null) "You have the latest available version" else "Update ${update.version} is available")
+                }.onFailure {
+                    if (it is CancellationException) throw it
+                    mutableState.value = mutableState.value.copy(checkingUpdate = false)
+                    if (force) showNotice("Could not check for updates. Try again when you’re online.")
+                }
+        }
+    }
+    fun dismissUpdate() { mutableState.value = mutableState.value.copy(dismissedUpdate = mutableState.value.availableUpdate?.version) }
+
     fun refreshGames() {
         contentJob?.cancel()
         contentJob = viewModelScope.launch {
-            mutableState.value = mutableState.value.copy(loading = true, error = null)
-            runCatching { api.getGames() }
+            val cachedCatalog = localGames.loadCatalog()
+            mutableState.value = mutableState.value.copy(
+                games = cachedCatalog.ifEmpty { mutableState.value.games },
+                loading = cachedCatalog.isEmpty() && mutableState.value.games.isEmpty(), error = null,
+            )
+            runCatching { api.getGames().also { localGames.saveCatalog(it) } }
                 .onSuccess { games ->
                     mutableState.value = mutableState.value.copy(games = games, loading = false)
                 }
                 .onFailure { failure ->
                     if (failure is CancellationException) throw failure
+                    val cached = localGames.loadCatalog()
                     mutableState.value = mutableState.value.copy(
-                        loading = false,
-                        error = failure.message ?: "Could not reach Yapnix API",
+                        games = cached, loading = false,
+                        error = if (cached.isEmpty()) failure.message ?: "Could not load games" else null,
                     )
                 }
         }
@@ -132,13 +167,15 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 selectedLevel = level,
                 playableLevel = null,
                 savedProgress = null,
-                loading = true, loadedImages = 0, totalImages = level.questionCount, imageReadyId = null,
+                loading = true, readyImages = emptyMap(), loadedImages = 0, totalImages = level.questionCount, imageReadyId = null,
                 error = null,
             )
             runCatching {
-                val playable = api.getPlayableLevel(level)
+                val playable = localGames.load(level) ?: api.getPlayableLevel(level).let { localGames.save(it) }
+                check(playable.questions.isNotEmpty()) { "This game has no pictures yet" }
                 mutableState.value = mutableState.value.copy(totalImages = playable.questions.size)
-                GameImageCache.preload(getApplication(), playable.questions) { count -> mutableState.value = mutableState.value.copy(loadedImages = count) }
+                val images = GameImageCache.preload(getApplication(), playable.questions) { count -> mutableState.value = mutableState.value.copy(loadedImages = count) }
+                mutableState.value = mutableState.value.copy(readyImages = images)
                 val flushed = CompletableDeferred<Unit>()
                 writes.send(ProgressWrite.Flush(flushed))
                 flushed.await()
@@ -171,6 +208,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             mutableState.value = current.copy(error = "This game has no playable questions yet")
             return
         }
+        if (playable.questions.any { it.id !in current.readyImages }) return
         val saved = current.savedProgress?.takeUnless { it.completed }
         val index = saved?.questionIndex?.coerceIn(0, (playable.questions.size - 1).coerceAtLeast(0)) ?: 0
         mutableState.value = current.copy(
@@ -178,8 +216,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             questionIndex = index,
             score = saved?.score ?: 0,
             correctCount = saved?.correctCount ?: 0,
-            preparationSeconds = 3,
-            remainingSeconds = playable.level.timeLimitSeconds,
+            preparationSeconds = 1,
+            remainingSeconds = 5,
             phase = SessionPhase.PREPARING,
             feedback = "Get ready",
             listenAttempt = 0,
@@ -193,12 +231,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val current = mutableState.value
         if (current.screen != AppScreen.SESSION || current.paused || current.phase != SessionPhase.PREPARING || !RoundReadiness.ready(current.playableLevel?.questions?.getOrNull(current.questionIndex)?.id, current.imageReadyId, current.promptReadyId)) return
         if (current.preparationSeconds <= 1) {
-            questionDeadline = SystemClock.elapsedRealtime() + (current.playableLevel?.level?.timeLimitSeconds ?: 5) * 1000L
+            questionDeadline = SystemClock.elapsedRealtime() + RevealTimer.SECONDS * 1000L
             mutableState.value = current.copy(
                 preparationSeconds = 0,
-                remainingSeconds = current.playableLevel?.level?.timeLimitSeconds ?: 5,
+                remainingSeconds = 5,
                 phase = SessionPhase.PLAYING,
-                feedback = "Listening",
+                feedback = "",
             )
         } else {
             mutableState.value = current.copy(preparationSeconds = current.preparationSeconds - 1)
@@ -208,57 +246,19 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun tickQuestion() {
         val current = mutableState.value
         if (current.screen != AppScreen.SESSION || current.paused || current.phase != SessionPhase.PLAYING) return
-        val seconds = ((questionDeadline - SystemClock.elapsedRealtime() + 999) / 1000).toInt().coerceAtLeast(0)
+        val seconds = RevealTimer.remaining(questionDeadline, SystemClock.elapsedRealtime())
         if (seconds <= 0) {
             val answer = current.playableLevel?.questions?.getOrNull(current.questionIndex)?.primaryAnswer
                 ?: ""
             mutableState.value = current.copy(
                 remainingSeconds = 0,
                 phase = SessionPhase.FEEDBACK,
-                feedback = "Time. Answer: $answer",
+                feedback = answer,
             )
         } else {
             mutableState.value = current.copy(remainingSeconds = seconds)
         }
         if (seconds <= 0) saveProgress(completed = false)
-    }
-
-    fun submitSpeech(recognized: String) {
-        val current = mutableState.value
-        if (current.screen != AppScreen.SESSION || current.paused || current.phase != SessionPhase.PLAYING) return
-        if (SystemClock.elapsedRealtime() >= questionDeadline) { tickQuestion(); return }
-        val question = current.playableLevel?.questions?.getOrNull(current.questionIndex) ?: return
-        val heard = AnswerMatcher.normalize(recognized)
-        if (AnswerMatcher.matches(recognized, question.acceptedAnswers)) {
-            mutableState.value = current.copy(
-                phase = SessionPhase.FEEDBACK,
-                score = current.score + 1,
-                correctCount = current.correctCount + 1,
-                feedback = "Correct. ${question.primaryAnswer}",
-            )
-            saveProgress(completed = false)
-        } else {
-            mutableState.value = current.copy(
-                feedback = if (heard.isEmpty()) "Listening" else "Not quite. Try again",
-                listenAttempt = current.listenAttempt + 1,
-            )
-        }
-    }
-
-    fun submitSpeechCandidates(questionId: String, candidates: List<String>) {
-        val question = mutableState.value.playableLevel?.questions?.getOrNull(mutableState.value.questionIndex) ?: return
-        if (question.id != questionId) return
-        submitSpeech(candidates.firstOrNull { AnswerMatcher.matches(it, question.acceptedAnswers) } ?: candidates.firstOrNull().orEmpty())
-    }
-
-    fun speechFailed() {
-        val current = mutableState.value
-        if (!current.paused && current.screen == AppScreen.SESSION && current.phase == SessionPhase.PLAYING) {
-            mutableState.value = current.copy(
-                feedback = "Didn't catch that. Try again",
-                listenAttempt = current.listenAttempt + 1,
-            )
-        }
     }
 
     fun advanceQuestion() {
@@ -272,8 +272,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             mutableState.value = current.copy(
                 questionIndex = current.questionIndex + 1,
-                remainingSeconds = playable.level.timeLimitSeconds,
-                phase = SessionPhase.PREPARING, preparationSeconds = 3, imageReadyId = null, promptReadyId = null,
+                remainingSeconds = 5,
+                phase = SessionPhase.PREPARING, preparationSeconds = 1, imageReadyId = null, promptReadyId = null,
                 feedback = "Loading picture",
                 listenAttempt = current.listenAttempt + 1,
             )
@@ -314,15 +314,18 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun backToHome() {
+        contentJob?.cancel()
         mutableState.value = mutableState.value.copy(
             screen = AppScreen.HOME,
+            loading = false,
             selectedGame = null,
             selectedLevel = null,
             playableLevel = null,
+            readyImages = emptyMap(),
             error = null,
             paused = false,
         )
-        refreshGames()
+        if (mutableState.value.games.isEmpty()) refreshGames()
     }
 
     private fun saveProgress(completed: Boolean) {

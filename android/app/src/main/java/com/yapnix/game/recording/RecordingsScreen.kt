@@ -67,6 +67,7 @@ fun RecordingsScreen(onBack: () -> Unit) {
         TextButton(onClick = onBack) { Text("← Games") }
         Text("Your recordings", style = MaterialTheme.typography.headlineMedium)
         Text("Stored only on this device. Export or share a video when you choose.")
+        if (capture.finalizing) Text("Saving video and audio… It will appear here when ready.")
         if (message.isNotEmpty()) Text(message)
         Button(onClick = { recordings = store.list() }) { Text("Refresh") }
         if (recordings.isEmpty()) Text("No recordings yet. Turn on screen + camera recording before your next round.")

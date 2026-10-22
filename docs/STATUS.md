@@ -8,7 +8,7 @@ Updated 9 October 2026 after crash recovery. This records saved code and local c
 | --- | --- |
 | Backend | Validated Supabase sessions; approved administrator roles; publication-aware guest APIs; content create/edit and ordered assignments; atomic question creation/editing; publication readiness; authenticated image upload, private previews and reuse; owner-scoped progress sync. |
 | Studio | Google sign-in with approved-admin access; dashboard counts; game/level/question create/edit; question ordering and activation; publication readiness messages; private image upload/library/previews; game-scoped levels and image/answer selection; dismissible create/edit dialogs that close on successful save. |
-| Android | Guest voice gameplay, Unicode answer matching, timed rounds/results; serialized local progress and content-aware resume; background pause; optional Google PKCE login with encrypted tokens; explicit progress sync; optional local silent screen recording with front-camera overlay, preview, export/share and confirmed deletion. |
+| Android | Guest five-second answer-reveal gameplay, category browsing, local game/image downloads; serialized local progress and content-aware resume; background pause; optional Google PKCE login with encrypted tokens; explicit progress sync; optional dedicated game-canvas recording with movable/resizable front-camera overlay and microphone audio, preview, export/share and confirmed deletion. |
 | Database/Storage | Migrations 001–006; RLS and restricted RPCs; atomic content changes; deferred publication constraints; stale progress protection with content fingerprints; private `content-images` bucket setup and restrictive client policies. |
 
 Google login never grants administrator access by itself. Client progress and answer matching are non-authoritative. Recordings remain local until the player exports or shares them.
@@ -28,8 +28,8 @@ Next session: simplify the Studio content flow further. The user finds the curre
 
 1. Run the matching [complete SQL Editor bundle](../supabase/README.md), or apply only outstanding migrations in filename order. Migration 006 includes private Storage. Keep `content-images` private. No live project changes were made here.
 2. Configure the Google Web OAuth client and Supabase redirect URLs per [GOOGLE_OAUTH.md](GOOGLE_OAUTH.md), approve the Studio operator, and verify real login/upload/publication/sync against staging.
-3. Complete the physical-device log in [TESTING.md](TESTING.md). No authorized Android device was connected during recovery. Speech recognition alongside MediaProjection capture and CameraX preview particularly needs real-device validation.
-4. Configure production HTTPS, origins and signing/distribution before release. v0.2.0 records the game screen and camera preview; videos intentionally have no audio to reserve the microphone for answers. Hardware validation is pending.
+3. Complete the physical-device log in [TESTING.md](TESTING.md). No authorized Android device was connected during recovery. CameraX frames, hardware canvas encoding, microphone audio, export and update installation need real-device validation.
+4. Configure production HTTPS, origins and signing/distribution before release. v0.3.0 records a dedicated game composition, camera preview and microphone audio, with GitHub update prompts. Hardware validation is pending.
 
 ## Supabase Storage handoff
 

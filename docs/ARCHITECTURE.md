@@ -5,7 +5,7 @@
 - Kotlin and Jetpack Compose.
 - Coroutines and Flow.
 - MVVM/ViewModel state ownership.
-- CameraX for front-camera preview; MediaProjection for consented game-screen capture.
+- CameraX for front-camera frames; a dedicated game composition encoded with microphone audio.
 - Android media APIs for video output.
 - HTTP API calls through HttpURLConnection on IO dispatchers.
 - App-private SharedPreferences for local progress, with serialized writes.
@@ -38,7 +38,7 @@ The Android app stores progress locally as a non-authoritative preference. It pe
 
 ## Recording
 
-Video remains local to the Android device. A media-projection foreground service records the screen with a CameraX TextureView front-camera preview visible in the game. Recordings intentionally contain video only: SpeechRecognizer owns the microphone for answers. Android capture consent is requested for each new recording. Pausing, backgrounding or leaving a round stops and finalizes it. Finalized videos can be previewed, exported through the Android document picker, shared through FileProvider, or deleted after confirmation. No automatic upload occurs. Physical-device validation is pending.
+Video remains local to the Android device. A microphone foreground service encodes a dedicated game canvas and front-camera frames into H.264 with AAC microphone audio. No MediaProjection or device-screen recording is used. The camera overlay can be dragged and resized independently of game content. Games and images are stored locally; every round image is decoded before Play. Each question reveals its answer after five seconds without speech recognition or scoring. Pausing, backgrounding or leaving stops recording. Finalized videos support preview, explicit export/share and confirmed deletion. See [reaction flow and physical-device checks](ANDROID-REACTION-FLOW.md).
 
 Game metadata and all question pictures are fetched before Play becomes available; Coil caches image bytes using the question ID and storage path rather than the temporary signed URL. Each question also waits for image-display success and text-to-speech completion before starting its countdown. Spoken feedback completes before advancing. Android text-to-speech failure falls back to visual play.
 
@@ -58,3 +58,7 @@ The legacy session/progress UUID is retained for backward compatibility. New
 speaking mechanics require a player implementation and a validated question schema;
 creating a category alone does not enable unsupported gameplay. See
 [the workflow and upgrade guide](admin-game-workflow.md).
+
+## Android updates
+
+The Android app checks public GitHub releases at launch/resume (six-hour in-process throttle) and manually from Profile. It compares numeric three-part versions, ignores drafts, and accepts only exact HTTPS APK URLs under the Yapnix release repository. Test releases are included. Prompts appear outside gameplay. Installation uses the browser and Android installer with explicit user action; Later dismisses a version for the current process. No authentication, backend environment change or automatic installation is required.

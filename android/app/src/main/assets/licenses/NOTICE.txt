@@ -1,0 +1,11 @@
+Yapnix offline English recognition uses Vosk API (Alpha Cephei Inc.) and
+vosk-model-small-en-us-0.15, licensed under Apache License 2.0.
+https://github.com/alphacep/vosk-api
+https://alphacephei.com/vosk/models
+
+JNA is available under LGPL 2.1 or Apache License 2.0; this distribution uses
+the Apache License 2.0 option. See JNA-LICENSE.txt.
+https://github.com/java-native-access/jna
+
+The model archive is obtained from its publisher and verified against:
+SHA-256 30f26242c4eb449f948e42cb302dd7a686cb29a3423a8367f99ff41780942498

@@ -4,14 +4,14 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <queries><intent><action android:name="android.speech.RecognitionService" /></intent><intent><action android:name="android.intent.action.TTS_SERVICE" /></intent></queries>
 
     <application
         android:allowBackup="false"
         android:label="@string/app_name"
         android:theme="@style/Theme.Yapnix">
-        <service android:name=".recording.ScreenRecordingService" android:exported="false" android:foregroundServiceType="mediaProjection" />
+        <service android:name=".recording.ScreenRecordingService" android:exported="false" android:foregroundServiceType="microphone" />
         <provider android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.recordings" android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/recording_paths" />

@@ -57,10 +57,10 @@ Status: **not run**. No connected-device or live-project validation is claimed.
 | Images | Upload/reuse; draft image never exposed through guest APIs; private bucket direct access denied | Pending |
 | Publication | Incomplete games blocked; published category/game available to guest | Pending |
 | Recording | Camera grant/deny; start/stop/background; playable finalized local video | Pending |
-| Audio coexistence | Voice answers work during silent screen capture + front-camera preview; prompt completes before listening | Pending |
+| Audio coexistence | One microphone supplies offline English answers and recorded audio; prompt completes before listening | Pending |
 | Export/share | Preview, document export, share URI, cancel, confirmed delete | Pending |
 
-Record phone model, Android version, date, and actual results here before release. Screen + front-camera video capture is implemented, intentionally without audio. Text-to-speech, countdown, timeout answer reveal and exported-video contents still need physical-device validation. See [v0.2.0 phone checklist](releases/v0.2.0.md).
+Record phone model, Android version, date, and actual results here before release. Dedicated game-canvas capture includes movable/resizable front-camera frames and microphone audio. Text-to-speech, five-second reveals, recorded sound/sync, camera gestures and update installation still need physical-device validation. See [v0.3.0 phone checklist](releases/v0.3.0.md).
 
 ## SQL Editor bundle validation — 9 October 2026
 

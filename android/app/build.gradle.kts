@@ -28,8 +28,8 @@ android {
         applicationId = "com.yapnix.game"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
         buildConfigField("String", "API_BASE_URL", "\"${localValue("API_BASE_URL", "http://10.0.2.2:3333/api")}\"")
         buildConfigField("String", "SUPABASE_URL", "\"${localValue("SUPABASE_URL")}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${localValue("SUPABASE_ANON_KEY")}\"")
@@ -53,6 +53,8 @@ android {
         }
     }
 
+    sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/speech-assets"))
+
     buildFeatures {
         compose = true
         buildConfig = true
@@ -68,7 +70,14 @@ android {
     }
 }
 
+val prepareSpeechModel by tasks.registering(Exec::class) {
+    commandLine("python3", rootProject.file("scripts/prepare-speech-model.py").absolutePath)
+}
+tasks.named("preBuild") { dependsOn(prepareSpeechModel) }
+
 dependencies {
+    implementation("com.alphacephei:vosk-android:0.3.75@aar")
+    implementation("net.java.dev.jna:jna:5.18.1@aar")
     testImplementation("junit:junit:4.13.2")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.9.3")

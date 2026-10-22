@@ -14,13 +14,16 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
-/** TextureView preview is part of the screen recording. It never opens the microphone. */
+/** Camera texture supplies reaction frames to the dedicated game video canvas. */
 @Composable
-fun ReactionCamera(modifier: Modifier, onError: (String) -> Unit) {
+fun ReactionCamera(modifier: Modifier, onError: (String) -> Unit, onFrame: (android.graphics.Bitmap?) -> Unit = {}) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current
     val view = remember(context) { PreviewView(context).apply { implementationMode = PreviewView.ImplementationMode.COMPATIBLE } }
     val error = rememberUpdatedState(onError)
+    androidx.compose.runtime.LaunchedEffect(view) {
+        while (true) { onFrame(view.bitmap); kotlinx.coroutines.delay(84) }
+    }
     AndroidView(factory = { view }, modifier = modifier)
     DisposableEffect(context, lifecycle, view) {
         val future = ProcessCameraProvider.getInstance(context)
@@ -33,7 +36,7 @@ fun ReactionCamera(modifier: Modifier, onError: (String) -> Unit) {
                 check(camera.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)) { "Front camera unavailable" }
                 val useCase = Preview.Builder().build().also { it.setSurfaceProvider(view.surfaceProvider); preview = it }
                 camera.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_FRONT_CAMERA, useCase)
-            } catch (_: Exception) { error.value("Camera preview is unavailable. Your screen recording can continue.") }
+            } catch (_: Exception) { error.value("Camera unavailable. Try recording again.") }
         }, ContextCompat.getMainExecutor(context))
         onDispose { disposed = true; preview?.let { provider?.unbind(it) } }
     }

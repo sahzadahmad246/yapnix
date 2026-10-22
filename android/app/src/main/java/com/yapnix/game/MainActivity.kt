@@ -1,7 +1,23 @@
 package com.yapnix.game
 
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import android.net.Uri
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import android.app.Activity
-import android.media.projection.MediaProjectionManager
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.material3.Slider
+import androidx.compose.ui.unit.IntOffset
+import android.graphics.Bitmap
+import android.graphics.Paint
+import android.graphics.RectF
+import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.Icon
 import androidx.compose.ui.res.painterResource
@@ -21,9 +37,6 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -130,6 +143,11 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
     }
 
+    override fun onResume() {
+        super.onResume()
+        gameViewModel.checkForUpdates()
+    }
+
     override fun onStop() {
         gameViewModel.setForeground(false)
         ScreenRecordingService.stop(this)
@@ -144,6 +162,19 @@ private fun YapnixApp(viewModel: GameViewModel) {
     LaunchedEffect(capture.saved, capture.error) {
         if (capture.saved) viewModel.showNotice("Recording saved on this device")
         capture.error?.let(viewModel::showNotice)
+    }
+    val context = LocalContext.current
+    val update = state.availableUpdate
+    if (state.screen in listOf(AppScreen.HOME, AppScreen.PROGRESS, AppScreen.PROFILE, AppScreen.RECORDINGS) && update != null && state.dismissedUpdate != update.version) {
+        AlertDialog(onDismissRequest = viewModel::dismissUpdate,
+            title = { Text("A new Yapnix is ready") },
+            text = { Text("Version ${update.version.removePrefix("v")} is available. Download the APK and open it to install over this version. Your saved progress and recordings stay on this device.") },
+            confirmButton = { TextButton(onClick = {
+                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update.url))) }
+                    .onSuccess { viewModel.dismissUpdate() }
+                    .onFailure { viewModel.showNotice("Could not open the download. Try again from Profile."); viewModel.dismissUpdate() }
+            }) { Text("Install update") } },
+            dismissButton = { TextButton(onClick = viewModel::dismissUpdate) { Text("Later") } })
     }
     var confirmExit by remember { mutableStateOf(false) }
     BackHandler(enabled = state.screen != AppScreen.HOME) {
@@ -173,6 +204,9 @@ private fun YapnixApp(viewModel: GameViewModel) {
             Text("PRIVATE BY DEFAULT", color = Lime, fontWeight = FontWeight.Bold)
             Text("Recordings stay on this device. Choose export or share when you want to keep a copy.", color = Muted, modifier = Modifier.padding(top = 12.dp))
             Text("Yapnix ${BuildConfig.VERSION_NAME}", color = Muted, modifier = Modifier.padding(top = 24.dp))
+            OutlinedButton(enabled = !state.checkingUpdate, onClick = { viewModel.checkForUpdates(force = true) }) {
+                Text(if (state.checkingUpdate) "Checking…" else "Check for updates")
+            }
         }
         AppScreen.HOME -> HomeScreen(state, viewModel::openGame, viewModel::refreshGames, viewModel)
         AppScreen.SETUP -> GameSetupScreen(
@@ -194,13 +228,13 @@ private fun ProgressScreen(state: GameUiState, viewModel: GameViewModel) {
         Text("Your practice, saved on this device.", color = Muted)
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Brush.linearGradient(listOf(Panel, Color(0xFF174C50)))).padding(24.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("${state.progress.count { it.completed }}\nGames completed", color = Mist, fontSize = 16.sp, modifier = Modifier.weight(1f))
-            Text("${state.progress.sumOf { it.correctCount }}\nCorrect answers", color = Lime, fontSize = 16.sp, modifier = Modifier.weight(1f))
+            Text("${state.progress.size}\nGames played", color = Lime, fontSize = 16.sp, modifier = Modifier.weight(1f))
         }
         if (state.progress.isEmpty()) Text("Your first round starts a new story. Pick a game from Home to get going.", color = Muted)
         state.progress.sortedByDescending { it.lastPlayedAt }.forEach { save ->
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Panel).padding(20.dp)) {
                 Text(save.levelName, color = Mist, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                Text("${save.correctCount} correct · ${if (save.completed) "Completed" else "In progress"}", color = Muted)
+                Text("${if (save.completed) "Completed" else "In progress"}", color = Muted)
                 state.games.firstOrNull { it.sessionId == save.levelId }?.let { game ->
                     TextButton(onClick = { viewModel.openGame(game) }) { Text(if (save.completed) "Play again →" else "Continue →", color = Lime) }
                 }
@@ -217,25 +251,14 @@ private fun HomeScreen(
     viewModel: GameViewModel,
 ) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 32.dp)) {
-        Text("YAPNIX", color = Lime, fontSize = 15.sp, fontWeight = FontWeight.Black)
-        Spacer(Modifier.height(20.dp))
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(Brush.linearGradient(listOf(Panel, Color(0xFF174C50)))).padding(24.dp)) {
-            Text("YOUR DAILY VOICE PRACTICE", color = Lime, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(16.dp))
-            Text("A little play.\nA louder you.", color = Mist, fontSize = 36.sp, lineHeight = 40.sp, fontWeight = FontWeight.Black)
-            Spacer(Modifier.height(12.dp))
-            Text("Look. Listen. Speak.", color = Lime)
-        }
-        Spacer(Modifier.height(14.dp))
-        Text("Quick-fire voice challenges. Your progress stays on this device.", color = Muted, fontSize = 16.sp)
-        Spacer(Modifier.height(32.dp))
-        Text("CHOOSE A GAME", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(12.dp))
-
+        var selectedCategory by remember { mutableStateOf<String?>(null) }
+        TextButton(onClick = { selectedCategory = null }) { Text("YAPNIX", color = Lime, fontWeight = FontWeight.Black) }
+        Text(selectedCategory ?: "Let’s play", color = Mist, fontSize = 36.sp, fontWeight = FontWeight.Black)
+        Spacer(Modifier.height(24.dp))
         if (state.loading) {
             CircularProgressIndicator(color = Lime, modifier = Modifier.size(28.dp))
         } else if (state.error != null) {
-            ErrorPanel(state.error, "API: ${BuildConfig.API_BASE_URL}", onRefresh)
+            ErrorPanel(state.error, "Try again when you’re online.", onRefresh)
         } else if (state.games.isEmpty()) {
             EmptyPanel(
                 title = "No published games yet",
@@ -246,8 +269,14 @@ private fun HomeScreen(
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 state.games.groupBy { it.categoryId }.values.forEach { categoryGames ->
-                    Text(categoryGames.first().categoryName, color = Lime, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                    categoryGames.forEach { game ->
+                    val category = categoryGames.first().categoryName
+                    if (selectedCategory == null) Button(onClick = { selectedCategory = category }, modifier = Modifier.fillMaxWidth().height(110.dp), shape = RoundedCornerShape(24.dp), colors = ButtonDefaults.buttonColors(containerColor = Panel)) {
+                        Column(Modifier.fillMaxWidth()) {
+                            Text(category, color = Mist, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                            Text("${categoryGames.size} games →", color = Lime)
+                        }
+                    }
+                    if (selectedCategory == category) categoryGames.forEach { game ->
                     Button(
                         onClick = { onSelectGame(game) },
                         modifier = Modifier.fillMaxWidth().height(76.dp),
@@ -264,8 +293,7 @@ private fun HomeScreen(
             }
         }
         Spacer(Modifier.height(24.dp))
-        Text("GUEST PLAY  •  LOCAL PROGRESS", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-        Text("Pick a game and speak your answers. Pictures are downloaded before your round starts.", color = Muted, fontSize = 13.sp)
+
     }
 }
 
@@ -284,17 +312,10 @@ private fun GameSetupScreen(
     var permissionMessage by remember { mutableStateOf("") }
     val capture by ScreenRecordingService.status.collectAsState()
     var pendingStart by remember { mutableStateOf(false) }
-    val captureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val consent = result.data
-        if (result.resultCode == Activity.RESULT_OK && consent != null) {
-            pendingStart = true
-            ScreenRecordingService.start(context, result.resultCode, consent)
-        } else permissionMessage = "Screen recording declined. Turn recording off to play without it."
-    }
     val startRound = {
         if (state.recordEnabled) {
-            val manager = context.getSystemService(MediaProjectionManager::class.java)
-            captureLauncher.launch(manager.createScreenCaptureIntent())
+            pendingStart = true
+            ScreenRecordingService.start(context)
         } else onStart()
     }
     LaunchedEffect(capture, pendingStart) {
@@ -302,7 +323,7 @@ private fun GameSetupScreen(
         else if (pendingStart && capture.error != null) { pendingStart = false; permissionMessage = capture.error.orEmpty() }
     }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) startRound() else permissionMessage = "Microphone permission is needed for voice answers. Enable it in your device's app settings or try again."
+        if (granted) startRound() else permissionMessage = "Allow microphone access to record your reaction."
     }
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         viewModel.setRecording(granted)
@@ -324,7 +345,7 @@ private fun GameSetupScreen(
             }
             state.error != null -> ErrorPanel(state.error, "Check the backend and try again.", onBack)
             state.playableLevel != null -> Text(
-                "${state.playableLevel.questions.size} questions · ${state.selectedLevel?.timeLimitSeconds ?: 5}s each",
+                "${state.playableLevel.questions.size} questions · ${5}s each",
                 color = Muted, fontSize = 16.sp,
             )
         }
@@ -332,35 +353,34 @@ private fun GameSetupScreen(
         state.savedProgress?.let { progress ->
             Spacer(Modifier.height(18.dp))
             Text(
-                if (progress.completed) "Last score: ${progress.score}" else "Saved locally · question ${progress.questionIndex + 1} · score ${progress.score}",
+                if (progress.completed) "Played" else "Continue from picture ${progress.questionIndex + 1}",
                 color = Muted,
             )
         }
 
         Spacer(Modifier.weight(1f))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Record screen + camera", color = Mist)
+            Text("Record reaction", color = Mist)
             Switch(checked = state.recordEnabled, onCheckedChange = { enabled ->
                 if (!enabled) viewModel.setRecording(false)
                 else if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) viewModel.setRecording(true)
                 else cameraLauncher.launch(Manifest.permission.CAMERA)
             })
         }
-        Text("Local video with your face in the corner. Video is silent so the microphone stays available for your answers.", color = Muted, fontSize = 12.sp)
+        Text("Game + camera + mic. Saved here.", color = Muted, fontSize = 12.sp)
         if (permissionMessage.isNotEmpty()) Text(permissionMessage, color = Coral, modifier = Modifier.padding(vertical = 8.dp))
         if (state.selectedLevel != null && state.playableLevel != null) {
             Button(
                 onClick = {
-                    if (!SpeechRecognizer.isRecognitionAvailable(context)) permissionMessage = "Speech recognition is unavailable. Install or enable a speech recognition service on this device."
-                    else if (permissionGranted) startRound() else permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    if (!state.recordEnabled || permissionGranted) startRound() else permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                 },
-                enabled = !state.syncing && !state.loading && !pendingStart && !capture.starting,
+                enabled = !state.syncing && !state.loading && !pendingStart && !capture.starting && !capture.finalizing,
                 modifier = Modifier.fillMaxWidth().height(56.dp),
                 shape = RoundedCornerShape(12.dp),
             ) {
-                Text(if (pendingStart || capture.starting) "PREPARING RECORDING…" else "LET’S PLAY", fontWeight = FontWeight.Black)
+                Text(if (capture.finalizing) "SAVING PREVIOUS VIDEO…" else if (pendingStart || capture.starting) "PREPARING RECORDING…" else "LET’S PLAY", fontWeight = FontWeight.Black)
             }
-            Text("Microphone access is needed to recognize answers.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+            Text("5 seconds. Then the answer.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
         }
     }
 }
@@ -385,8 +405,8 @@ private fun SessionScreen(state: GameUiState, viewModel: GameViewModel) {
             audio.speak(playable.prompt, question.language) { viewModel.promptReady(question.id) }
         }
         if (!state.paused && question != null && state.phase == SessionPhase.FEEDBACK && !feedbackReady) {
-            audio.result(state.feedback.startsWith("Correct"))
-            audio.speak(if (state.feedback.startsWith("Correct")) "Correct. ${question.primaryAnswer}" else "The answer is ${question.primaryAnswer}", question.language) { feedbackReady = true }
+
+            audio.speak("${question.primaryAnswer}", question.language) { feedbackReady = true }
         }
     }
     LaunchedEffect(state.phase, state.remainingSeconds, state.paused) {
@@ -411,20 +431,43 @@ private fun SessionScreen(state: GameUiState, viewModel: GameViewModel) {
         }
     }
 
-    SpeechRecognitionEffect(
-        active = !state.paused && permissionGranted && state.screen == AppScreen.SESSION && state.phase == SessionPhase.PLAYING,
-        retry = state.listenAttempt,
-        questionId = question?.id.orEmpty(),
-        language = question?.language ?: "en-US",
-        onResult = viewModel::submitSpeechCandidates,
-        onFailure = viewModel::speechFailed,
-        onUnavailable = viewModel::speechUnavailable,
-    )
+    var cameraBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var cameraX by remember { mutableStateOf(.65f) }
+    var cameraY by remember { mutableStateOf(.65f) }
+    var cameraSize by remember { mutableStateOf(.30f) }
+    val latestState by rememberUpdatedState(state)
+    DisposableEffect(Unit) {
+        ScreenRecordingService.drawFrame = { canvas ->
+            val current = latestState
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE; textSize = 34f }
+            canvas.drawText("${current.questionIndex + 1} / ${current.playableLevel?.questions?.size ?: 0}", 40f, 65f, paint)
+            canvas.drawText(current.playableLevel?.prompt ?: "What is this?", 40f, 130f, paint)
+            paint.textSize = 60f
+            canvas.drawText(if (current.phase == SessionPhase.PLAYING) "${current.remainingSeconds}" else if (current.phase == SessionPhase.PREPARING) "${current.preparationSeconds}" else "", 620f, 130f, paint)
+            current.readyImages[current.playableLevel?.questions?.getOrNull(current.questionIndex)?.id]?.let { bitmap ->
+                val scale = minOf(640f / bitmap.width, 850f / bitmap.height)
+                val w = bitmap.width * scale; val h = bitmap.height * scale
+                canvas.drawBitmap(bitmap, null, RectF((720-w)/2, 180f+(850-h)/2, (720+w)/2, 180f+(850+h)/2), paint)
+            }
+            cameraBitmap?.let { bitmap ->
+                val w = 720f * cameraSize; val h = w * 1.4f
+                val x = cameraX * (720f-w); val y = 180f + cameraY * (850f-h)
+                canvas.drawBitmap(bitmap, null, RectF(x,y,x+w,y+h), paint)
+            }
+            if (current.phase == SessionPhase.FEEDBACK) {
+                paint.color = android.graphics.Color.rgb(112,228,206); paint.textSize = 42f
+                val answer = current.playableLevel?.questions?.getOrNull(current.questionIndex)?.primaryAnswer.orEmpty()
+                paint.textSize = minOf(42f, 640f / paint.measureText(answer).coerceAtLeast(1f) * 42f)
+                canvas.drawText(answer, 40f, 1160f, paint)
+            }
+        }
+        onDispose { ScreenRecordingService.drawFrame = null }
+    }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 20.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("${state.questionIndex + 1} / ${playable?.questions?.size ?: 0}", color = Muted, fontWeight = FontWeight.Bold)
-            Text("SCORE  ${state.score}", color = Lime, fontWeight = FontWeight.Black)
+            Text("5 SECOND CHALLENGE", color = Lime, fontWeight = FontWeight.Black)
         }
         Spacer(Modifier.height(14.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -438,12 +481,12 @@ private fun SessionScreen(state: GameUiState, viewModel: GameViewModel) {
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Black,
             )
-            Text(if (state.phase == SessionPhase.PLAYING) "● LISTENING" else "", color = Lime, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(if (state.phase == SessionPhase.PLAYING) "SAY IT!" else "", color = Lime, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(18.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Text(playable?.prompt ?: "What is this?", color = Mist, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            val fraction by animateFloatAsState(targetValue = if (state.phase == SessionPhase.PLAYING) state.remainingSeconds.toFloat() / (state.selectedLevel?.timeLimitSeconds ?: 5) else 1f, animationSpec = tween(900), label = "Time remaining")
+            val fraction by animateFloatAsState(targetValue = if (state.phase == SessionPhase.PLAYING) state.remainingSeconds.toFloat() / (5) else 1f, animationSpec = tween(900), label = "Time remaining")
             Box(Modifier.size(60.dp), contentAlignment = Alignment.Center) {
                 Canvas(Modifier.fillMaxSize().padding(4.dp)) {
                     drawArc(Muted.copy(alpha = .2f), -90f, 360f, false, style = Stroke(5.dp.toPx()))
@@ -453,19 +496,16 @@ private fun SessionScreen(state: GameUiState, viewModel: GameViewModel) {
             }
         }
         Spacer(Modifier.height(12.dp))
-        Box(
+        BoxWithConstraints(
             Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(16.dp)).background(Panel),
             contentAlignment = Alignment.Center,
         ) {
-            if (question != null) {
-                AsyncImage(
-                    model = GameImageCache.request(context, question),
-                    onSuccess = { viewModel.imageReady(question.id) },
-                    onError = { viewModel.imageFailed() },
-                    contentDescription = playable?.prompt ?: "What is this?",
-                    modifier = Modifier.fillMaxSize().padding(14.dp).clip(RoundedCornerShape(10.dp)),
-                    contentScale = ContentScale.Fit,
-                )
+            val areaWidth = constraints.maxWidth.toFloat()
+            val areaHeight = constraints.maxHeight.toFloat()
+            state.readyImages[question?.id]?.let { bitmap ->
+                Image(bitmap.asImageBitmap(), contentDescription = playable?.prompt,
+                    modifier = Modifier.fillMaxSize().padding(14.dp), contentScale = ContentScale.Fit)
+                LaunchedEffect(question?.id) { question?.let { viewModel.imageReady(it.id) } }
             }
             if (state.phase == SessionPhase.PREPARING) {
                 Box(Modifier.fillMaxSize().background(Ink.copy(alpha = 0.72f)), contentAlignment = Alignment.Center) {
@@ -480,8 +520,18 @@ private fun SessionScreen(state: GameUiState, viewModel: GameViewModel) {
                 }
             }
             if (capture.active && !state.paused) ReactionCamera(
-                modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).size(width = 100.dp, height = 140.dp).clip(RoundedCornerShape(10.dp)),
+                modifier = Modifier.align(Alignment.TopStart)
+                    .offset { IntOffset((cameraX * (areaWidth * (1-cameraSize))).toInt(), (cameraY * (areaHeight-areaWidth*cameraSize*1.4f).coerceAtLeast(0f)).toInt()) }
+                    .size(width = maxWidth * cameraSize, height = maxWidth * cameraSize * 1.4f)
+                    .pointerInput(areaWidth, areaHeight) {
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            cameraSize = (cameraSize * zoom).coerceIn(.18f,.65f)
+                            cameraX = (cameraX + pan.x / (areaWidth*(1-cameraSize)).coerceAtLeast(1f)).coerceIn(0f,1f)
+                            cameraY = (cameraY + pan.y / (areaHeight-areaWidth*cameraSize*1.4f).coerceAtLeast(1f)).coerceIn(0f,1f)
+                        }
+                    }.clip(RoundedCornerShape(16.dp)),
                 onError = viewModel::showNotice,
+                onFrame = { cameraBitmap = it },
             )
             if (state.paused) {
                 Column(Modifier.fillMaxSize().background(Ink.copy(alpha = .85f)), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -493,8 +543,11 @@ private fun SessionScreen(state: GameUiState, viewModel: GameViewModel) {
         }
         Spacer(Modifier.height(18.dp))
         if (state.phase == SessionPhase.FEEDBACK) Text("ANSWER · ${question?.primaryAnswer.orEmpty()}", color = Lime, fontSize = 26.sp, fontWeight = FontWeight.Black)
-        Text(state.feedback, color = if (state.phase == SessionPhase.FEEDBACK && state.feedback.startsWith("Correct")) Lime else Mist, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        Text("Speak clearly. You can try again while time remains.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 5.dp))
+
+        if (capture.active) Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Camera", color = Muted)
+            Slider(value = cameraSize, onValueChange = { cameraSize = it }, valueRange = .18f.. .65f, modifier = Modifier.weight(1f))
+        }
         state.notice?.let { Text(it, color = Muted, fontSize = 12.sp) }
     }
 }
@@ -509,8 +562,8 @@ private fun ResultsScreen(state: GameUiState, onReplay: () -> Unit, onHome: () -
     ) {
         Text("ROUND COMPLETE", color = Lime, fontSize = 13.sp, fontWeight = FontWeight.Black)
         Spacer(Modifier.height(18.dp))
-        Text("${state.score} / $total", color = Mist, fontSize = 64.sp, fontWeight = FontWeight.Black)
-        Text("${state.correctCount} correct  ·  ${total - state.correctCount} missed", color = Muted, fontSize = 16.sp)
+        Text("$total pictures", color = Mist, fontSize = 40.sp, fontWeight = FontWeight.Black)
+        Text("Nice reactions!", color = Muted, fontSize = 16.sp)
         Spacer(Modifier.height(32.dp))
         Button(onClick = onReplay, modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(12.dp)) {
             Text("PLAY AGAIN", fontWeight = FontWeight.Black)
@@ -574,70 +627,5 @@ private fun ErrorPanel(message: String, detail: String, onRetry: () -> Unit) {
         Spacer(Modifier.height(6.dp))
         Text(detail, color = Muted, fontSize = 12.sp)
         TextButton(onClick = onRetry) { Text("RETRY", color = Lime) }
-    }
-}
-
-@Composable
-private fun SpeechRecognitionEffect(
-    active: Boolean,
-    retry: Int,
-    questionId: String,
-    language: String,
-    onResult: (String, List<String>) -> Unit,
-    onFailure: () -> Unit,
-    onUnavailable: (String) -> Unit,
-) {
-    val context = LocalContext.current
-    val latestResult by rememberUpdatedState(onResult)
-    val latestFailure by rememberUpdatedState(onFailure)
-    val latestActive by rememberUpdatedState(active)
-    val latestUnavailable by rememberUpdatedState(onUnavailable)
-    val recognizer = remember(context, questionId) {
-        if (SpeechRecognizer.isRecognitionAvailable(context)) {
-            SpeechRecognizer.createSpeechRecognizer(context)
-        } else null
-    }
-
-    DisposableEffect(recognizer) {
-        if (recognizer != null) {
-            recognizer.setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) = Unit
-                override fun onBeginningOfSpeech() = Unit
-                override fun onRmsChanged(rmsdB: Float) = Unit
-                override fun onBufferReceived(buffer: ByteArray?) = Unit
-                override fun onEndOfSpeech() = Unit
-                override fun onEvent(eventType: Int, params: Bundle?) = Unit
-
-                override fun onError(error: Int) {
-                    if (latestActive && error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) latestUnavailable("Microphone access is unavailable. Enable it in app settings.")
-                    else if (error != SpeechRecognizer.ERROR_CLIENT && latestActive) latestFailure()
-                }
-
-                override fun onResults(results: Bundle?) {
-                    val words = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    if (latestActive) latestResult(questionId, words.orEmpty())
-                }
-
-                override fun onPartialResults(partialResults: Bundle?) = Unit
-            })
-        }
-        onDispose { recognizer?.destroy() }
-    }
-
-    LaunchedEffect(active, retry, recognizer, language) {
-        if (recognizer == null) {
-            if (active) latestUnavailable("Speech recognition is unavailable on this device")
-        } else if (active) {
-            if (retry > 0) kotlinx.coroutines.delay(250)
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, language)
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            }
-            runCatching { recognizer.startListening(intent) }.onFailure { latestFailure() }
-        } else {
-            recognizer?.cancel()
-        }
     }
 }
