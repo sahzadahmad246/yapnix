@@ -121,7 +121,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun checkForUpdates(force: Boolean = false) {
         if (mutableState.value.checkingUpdate) return
         val now = SystemClock.elapsedRealtime()
-        if (!force && lastUpdateCheck > 0 && now - lastUpdateCheck < 6 * 60 * 60 * 1000L) return
+        if (!force && lastUpdateCheck > 0 && now - lastUpdateCheck < 15 * 60 * 1000L) return
         mutableState.value = mutableState.value.copy(checkingUpdate = true)
         viewModelScope.launch {
             runCatching { AppUpdates.check(BuildConfig.VERSION_NAME) }

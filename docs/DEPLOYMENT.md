@@ -147,7 +147,7 @@ keys or a Google client secret in the app.
    removes local app data, so export any recordings first.
 
 For later releases, increase `versionCode` and update `versionName` in
-`android/app/build.gradle.kts` before building. The current values are 1 / 0.1.0.
+`android/app/build.gradle.kts` before building. The current values are 7 / 0.6.0.
 An APK is directly installable; an AAB is intended for Google Play.
 
 ## 6. Publish the APK on GitHub Releases
@@ -204,3 +204,9 @@ Release notes for the first test build are in `docs/releases/v0.1.0.md`.
 ## Catalogue deployment order
 
 Apply `upgrade_icon_library.sql` (requires 001–008) or the complete `upgrade_existing.sql` before publishing the updated API/Studio. If a Git-triggered API deployment arrives first, guest catalogue reads fall back to the previous publication-filtered query with default bundled icons while the new columns are unavailable. Selecting/persisting icons still requires the SQL upgrade. New icon writes check schema support first and return an actionable migration error before mutating content if the upgrade is missing. Then deploy/update Studio and install the new Android APK to see selected icons offline.
+
+## Source pushes and installed-app updates
+
+Pushing to GitHub does not update an installed Android app. Each Android release must increment both version code and version name, build a release APK with the existing signing key, and publish an asset named exactly `yapnix-vX.Y.Z.apk` on the matching `vX.Y.Z` GitHub release. Keep its SHA-256 checksum alongside it. A draft release is not discoverable by the app. The current updater reads the releases list, including testing pre-releases.
+
+Installed v0.5.0 already downloads and verifies updates inside Yapnix, then opens Android’s installer for an in-place update. You → Check for updates bypasses the installed app’s automatic-check interval. The source’s shorter 15-minute interval and cache bypass take effect after updating to v0.6.0. Do not uninstall to update; uninstalling would remove local data.

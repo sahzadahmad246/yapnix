@@ -33,6 +33,8 @@ object AppUpdates {
         try {
             connection.connectTimeout = 10_000; connection.readTimeout = 10_000
             connection.instanceFollowRedirects = false
+            connection.useCaches = false
+            connection.setRequestProperty("Cache-Control", "no-cache")
             connection.setRequestProperty("Accept", "application/vnd.github+json")
             connection.setRequestProperty("User-Agent", "Yapnix/$installed")
             check(connection.responseCode == 200)

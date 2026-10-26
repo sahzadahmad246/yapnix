@@ -72,7 +72,7 @@ fun UpdatePanel(viewModel: GameViewModel) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(when (stage) {
-                    UpdateStage.IDLE -> "A fresh update is ready."
+                    UpdateStage.IDLE -> "Update your installed Yapnix app here. Your local videos and progress stay on this device."
                     UpdateStage.DOWNLOADING -> "Downloading update…"
                     UpdateStage.VERIFYING -> "Checking update…"
                     UpdateStage.READY -> if (installAllowed) "Ready to install." else "Allow Yapnix to install this update in Android settings."
@@ -113,7 +113,7 @@ fun UpdatePanel(viewModel: GameViewModel) {
                     stage == UpdateStage.READY && !installAllowed -> "Allow updates"
                     stage == UpdateStage.READY -> "Install update"
                     stage == UpdateStage.FAILED -> "Retry"
-                    else -> "Download"
+                    else -> "Update now"
                 })
             }
         },
