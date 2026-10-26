@@ -1,3 +1,4 @@
+import { CATALOG_ICON_KEYS } from '../games/catalog-icons.js';
 import { GAME_PROMPTS } from '../games/game-prompts.js';
 import { PartialType } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
@@ -19,6 +20,17 @@ import {
 } from 'class-validator';
 
 export class CreateGameDto {
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsIn(CATALOG_ICON_KEYS)
+  icon_key?: string;
+
+  @ValidateIf((_object, value) => value !== undefined && value !== null)
+  @IsString()
+  @MaxLength(512)
+  @Matches(/^(?!.*\.\.)(?!\/)[A-Za-z0-9_./-]+\.(?:webp|png|jpg|jpeg)$/i)
+  icon_storage_path?: string | null;
+
+
   @IsString()
   @MinLength(1)
   @MaxLength(120)
@@ -145,6 +157,17 @@ export class UpdateQuestionDto extends PartialType(CreateQuestionDto, { skipNull
 
 
 export class CreateCategoryDto {
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsIn(CATALOG_ICON_KEYS)
+  icon_key?: string;
+
+  @ValidateIf((_object, value) => value !== undefined && value !== null)
+  @IsString()
+  @MaxLength(512)
+  @Matches(/^(?!.*\.\.)(?!\/)[A-Za-z0-9_./-]+\.(?:webp|png|jpg|jpeg)$/i)
+  icon_storage_path?: string | null;
+
+
   @IsString() @MinLength(1) @MaxLength(120)
   @Transform(({ value }: { value: unknown }) => typeof value === 'string' ? value.trim() : value)
   name!: string;

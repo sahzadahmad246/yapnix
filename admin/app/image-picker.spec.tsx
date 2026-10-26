@@ -28,6 +28,22 @@ describe('Studio image uploads', () => {
     expect(options?.body).toBeInstanceOf(FormData);
     expect(onBusyChange.mock.calls).toEqual([[true], [false]]);
   });
+  it('uses the artwork crop endpoint and excludes non-square library images', async () => {
+    const square = { storage_path: 'artwork/icon.webp', image_url: 'https://storage.test/icon', original_filename: 'icon.png', width: 512, height: 512 };
+    const wide = { ...square, storage_path: 'wide.webp', original_filename: 'wide.png', width: 800 };
+    const onChange = vi.fn();
+    render(<ImagePicker square token="admin" value="" disabled={false} onChange={onChange} onBusyChange={() => {}} />);
+    const user = userEvent.setup();
+    vi.mocked(apiRequest).mockResolvedValueOnce(square);
+    await user.upload(screen.getByLabelText('Upload square artwork'), new File(['png'], 'icon.png', { type: 'image/png' }));
+    await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/admin/media/artwork', 'admin', expect.objectContaining({ method: 'POST' })));
+    vi.mocked(apiRequest).mockResolvedValueOnce([square, wide]);
+    await user.click(screen.getByRole('button', { name: 'Browse uploaded images' }));
+    expect(await screen.findByRole('button', { name: /icon.png/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /wide.png/ })).toBeNull();
+    await user.click(screen.getByRole('button', { name: /icon.png/ }));
+    expect(onChange).toHaveBeenLastCalledWith(square);
+  });
   it('displays failed uploads and restores controls', async () => {
     vi.mocked(apiRequest).mockRejectedValue(new Error('Storage unavailable'));
     const { user, onChange } = mount();

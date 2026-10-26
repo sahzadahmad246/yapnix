@@ -12,8 +12,8 @@ GitHub or the hosting services. Use the SAME Supabase project in all environment
 to keep that content. Do not create another database for this deployment.
 
 If needed, run `supabase/sql-editor/upgrade_existing.sql` in Supabase SQL Editor
-as postgres. If categories/migration 007 are already installed, the smaller
-`supabase/sql-editor/upgrade_game_editor.sql` applies migration 008. Do not run
+as postgres. If migrations 001–008 are already installed, the smaller
+`supabase/sql-editor/upgrade_icon_library.sql` applies migrations 009–010, including both uploaded artwork and bundled icons. Do not run
 `setup_fresh.sql` against an existing installation. Then run `verify_setup.sql`.
 
 Find your project URL and API keys in the project's Connect dialog / Settings →
@@ -200,3 +200,7 @@ cd android
 
 The signed output is `android/app/build/outputs/apk/release/app-release.apk`.
 Release notes for the first test build are in `docs/releases/v0.1.0.md`.
+
+## Catalogue deployment order
+
+Apply `upgrade_icon_library.sql` (requires 001–008) or the complete `upgrade_existing.sql` before publishing the updated API/Studio. If a Git-triggered API deployment arrives first, guest catalogue reads fall back to the previous publication-filtered query with default bundled icons while the new columns are unavailable. Selecting/persisting icons still requires the SQL upgrade. New icon writes check schema support first and return an actionable migration error before mutating content if the upgrade is missing. Then deploy/update Studio and install the new Android APK to see selected icons offline.

@@ -34,12 +34,15 @@ let saved;
 let questionUpdate;
 let signedPaths;
 let uploadedPaths;
+let legacyIconSchema = false;
 
 function query(table, scope) {
   calls.push({ table, scope });
   const filters = [];
   let inserted;
+  let selection = '';
   const result = () => {
+    if (legacyIconSchema && table === 'games' && selection.includes('icon_key')) return { data: null, error: { code: '42703', message: 'column games.icon_key does not exist' }, count: 0 };
     let rows = table === 'games' ? games : table === 'levels' ? levels : [];
     if (table === 'admin_users') {
       const user = filters.find(([key]) => key === 'supabase_user_id')?.[1];
@@ -55,7 +58,7 @@ function query(table, scope) {
     return { data: rows, error: null, count: rows.length };
   };
   const builder = {
-    select() { return builder; },
+    select(columns) { selection = columns; return builder; },
     delete() { calls.push({ table, scope, operation: 'delete', filters }); return builder; },
     insert(value) { inserted = value; return builder; },
     eq(key, value) { filters.push([key, value]); return builder; },
@@ -119,7 +122,7 @@ before(async () => {
   base = await app.getUrl();
 });
 after(async () => { await app?.close(); });
-beforeEach(() => { calls = []; saved = undefined; questionUpdate = undefined; signedPaths = []; uploadedPaths = []; });
+beforeEach(() => { calls = []; saved = undefined; questionUpdate = undefined; signedPaths = []; uploadedPaths = []; legacyIconSchema = false; });
 
 async function request(path, token, body, method = body ? 'POST' : 'GET') {
   const response = await fetch(`${base}/api${path}`, {
@@ -348,4 +351,73 @@ test('game prompts are approved-admin only and unknown prompt keys are rejected'
   assert.ok(response.body.some(prompt=>prompt.key==='guess_animal'&&prompt.label==='Guess the animal'));
   assert.equal((await request(`/admin/games/${ids.game}`,'admin-token',{prompt_key:'not_supported'},'PATCH')).status,400);
   assert.equal((await request(`/admin/games/${ids.game}`,'admin-token',{prompt_key:'guess_animal'},'PATCH')).status,200);
+});
+
+
+test('catalogue artwork is signed only after publication filtering', async () => {
+  games[0].icon_key = 'paw-print';
+  games[0].icon_storage_path = 'artwork/published.webp';
+  games[0].category_id = 'guess';
+  games[0].game_categories = { id: 'guess', name: 'Guess', description: 'Say what you see.', icon_key: 'question', icon_storage_path: 'artwork/guess.webp' };
+  games[1].icon_storage_path = 'artwork/draft.webp';
+  try {
+    const response = await request('/games');
+    assert.equal(response.status, 200);
+    assert.equal(response.body[0].icon_key, 'paw-print');
+    assert.equal(response.body[0].category.icon_key, 'question');
+    assert.match(response.body[0].icon_url, /artwork\/published.webp/);
+    assert.match(response.body[0].category.icon_url, /artwork\/guess.webp/);
+    assert.equal(response.body[0].category.description, 'Say what you see.');
+    assert.deepEqual(signedPaths.sort(), ['artwork/guess.webp', 'artwork/published.webp']);
+  } finally {
+    delete games[0].icon_key; delete games[0].icon_storage_path; delete games[0].category_id; delete games[0].game_categories; delete games[1].icon_storage_path;
+  }
+});
+
+test('square artwork upload enforces admin approval and returns a 512px square', async () => {
+  const send = async token => {
+    const body = new FormData();
+    body.set('file', new Blob([await sharp({ create: { width: 80, height: 40, channels: 3, background: 'red' } }).png().toBuffer()], { type: 'image/png' }), 'icon.png');
+    return fetch(`${base}/api/admin/media/artwork`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body });
+  };
+  assert.equal((await send()).status, 401);
+  assert.equal((await send('player-token')).status, 403);
+  assert.deepEqual(uploadedPaths, []);
+  const response = await send('admin-token');
+  assert.equal(response.status, 201);
+  const body = await response.json();
+  assert.equal(body.width, 512); assert.equal(body.height, 512);
+  assert.match(body.storage_path, /^artwork\/[0-9a-f-]+\.webp$/);
+});
+
+
+test('approved admins save library icons without uploading media and unknown keys are rejected', async () => {
+  const content = { name: 'Animals', slug: 'animals', difficulty: 1, icon_key: 'paw-print' };
+  assert.equal((await request('/admin/games', 'admin-token', content)).status, 201);
+  assert.deepEqual(questionUpdate, { name: 'create_standalone_game', args: { content } });
+  assert.equal((await request(`/admin/games/${ids.game}`, 'player-token', { icon_key: 'cat' }, 'PATCH')).status, 403);
+  assert.equal((await request(`/admin/games/${ids.game}`, 'admin-token', { icon_key: 'not-bundled' }, 'PATCH')).status, 400);
+  assert.equal((await request(`/admin/games/${ids.game}`, 'admin-token', { icon_key: 'cat', icon_storage_path: null }, 'PATCH')).status, 200);
+  assert.deepEqual(questionUpdate.args.changes, { icon_key: 'cat', icon_storage_path: null });
+  assert.deepEqual(uploadedPaths, []);
+});
+
+
+test('guest catalogue remains publication-aware before the icon SQL upgrade', async () => {
+  legacyIconSchema = true;
+  const response = await request('/games');
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body.map(game => game.id), [ids.game]);
+  assert.equal(response.body[0].icon_key, 'game-controller');
+  assert.ok(calls.every(call => call.scope === 'public'));
+  assert.deepEqual(signedPaths, []);
+});
+
+
+test('library icon saves require the SQL upgrade before mutating legacy content', async () => {
+  legacyIconSchema = true;
+  const response = await request('/admin/games', 'admin-token', { name: 'Animals', slug: 'animals', difficulty: 1, icon_key: 'paw-print' });
+  assert.equal(response.status, 503);
+  assert.match(response.body.message, /upgrade_icon_library.sql/);
+  assert.equal(questionUpdate, undefined);
 });

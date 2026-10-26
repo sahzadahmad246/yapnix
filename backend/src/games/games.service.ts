@@ -8,19 +8,37 @@ export class GamesService {
   constructor(private readonly supabase: SupabaseService, private readonly media: MediaService) {}
 
   async listPublishedGames() {
-    const { data, error } = await this.supabase.client
+    let { data, error } = await this.supabase.client
       .from('games')
-      .select('id,name,description,difficulty,prompt_key,category_id,game_categories!inner(id,name,slug,gameplay_kind),levels(id,question_count,default_time_limit_seconds)')
+      .select('id,name,description,difficulty,prompt_key,icon_key,icon_storage_path,category_id,game_categories!inner(id,name,slug,description,gameplay_kind,icon_key,icon_storage_path),levels(id,question_count,default_time_limit_seconds)')
       .eq('is_published', true)
       .order('created_at', { ascending: false });
 
+    // A source deployment can arrive before the additive SQL upgrade. Keep
+    // guest gameplay available with bundled defaults until the new columns exist.
+    if (error && ['42703', 'PGRST204'].includes(error.code) && /icon_key|icon_storage_path/.test(error.message)) {
+      const legacy = await this.supabase.client.from('games')
+        .select('id,name,description,difficulty,prompt_key,category_id,game_categories!inner(id,name,slug,description,gameplay_kind),levels(id,question_count,default_time_limit_seconds)')
+        .eq('is_published', true).order('created_at', { ascending: false });
+      error = legacy.error;
+      data = legacy.data?.map(game => ({ ...game, icon_key: 'game-controller', icon_storage_path: null,
+        game_categories: (Array.isArray(game.game_categories) ? game.game_categories : [game.game_categories])
+          .filter(Boolean).map(category => ({ ...category, icon_key: 'question', icon_storage_path: null })),
+      })) ?? null;
+    }
+
     if (error) throw new NotFoundException('Published games are unavailable');
-    return (data ?? []).map(game => {
+    const rows = await this.media.withArtworkUrls(data ?? []);
+    const categories = rows.flatMap(game => game.game_categories
+      ? Array.isArray(game.game_categories) ? game.game_categories : [game.game_categories] : []);
+    const categoryById = new Map((await this.media.withArtworkUrls([...new Map(categories.map(category => [category.id, category])).values()]))
+      .map(category => [category.id, category]));
+    return rows.map(game => {
       const session = game.levels?.[0];
       return { id: game.id, name: game.name, description: game.description, difficulty: game.difficulty,
-        category_id: game.category_id, category: game.game_categories, prompt_key: game.prompt_key, prompt: gamePrompt(game.prompt_key),
-        session_id: session?.id, question_count: session?.question_count,
-        default_time_limit_seconds: session?.default_time_limit_seconds };
+        icon_key: game.icon_key, icon_url: game.icon_url, category_id: game.category_id, category: categoryById.get(game.category_id) ?? null,
+        prompt_key: game.prompt_key, prompt: gamePrompt(game.prompt_key), session_id: session?.id,
+        question_count: session?.question_count, default_time_limit_seconds: session?.default_time_limit_seconds };
     });
   }
 

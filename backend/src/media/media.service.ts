@@ -18,7 +18,7 @@ export class MediaService {
     }
   }
 
-  async upload(file?: ImageUpload) {
+  async upload(file?: ImageUpload, square = false) {
     if (!file?.buffer.length) throw new BadRequestException('Choose a JPEG, PNG or WebP image');
     if (file.buffer.length > MAX_IMAGE_BYTES) throw new BadRequestException('Images must be 5 MB or smaller');
     let encoded: { data: Buffer; info: { width: number; height: number } };
@@ -28,7 +28,9 @@ export class MediaService {
       if (!['jpeg', 'png', 'webp'].includes(metadata.format ?? '') || (metadata.pages ?? 1) > 1) {
         throw new Error('Unsupported image');
       }
-      encoded = await image.rotate().resize({ width: 1920, height: 1920, fit: 'inside', withoutEnlargement: true })
+      encoded = await image.rotate().resize(square
+        ? { width: 512, height: 512, fit: 'cover', position: 'centre' }
+        : { width: 1920, height: 1920, fit: 'inside', withoutEnlargement: true })
         .webp({ quality: 85 }).toBuffer({ resolveWithObject: true });
     } catch {
       throw new BadRequestException('Use a valid, non-animated JPEG, PNG or WebP image (up to 25 megapixels)');
@@ -36,7 +38,7 @@ export class MediaService {
     if (encoded.data.length > MAX_IMAGE_BYTES) throw new BadRequestException('The processed image is too large');
     const storage = this.supabase.adminClient.storage;
     await this.requirePrivateBucket();
-    const path = `questions/${randomUUID()}.webp`;
+    const path = `${square ? 'artwork' : 'questions'}/${randomUUID()}.webp`;
     const object = storage.from(IMAGE_BUCKET);
     const { error } = await object.upload(path, encoded.data, { contentType: 'image/webp', upsert: false });
     if (error) throw new ServiceUnavailableException('Image upload failed; check the Storage bucket configuration');
@@ -55,11 +57,12 @@ export class MediaService {
     }
   }
 
-  async assertReadyImage(path: string) {
+  async assertReadyImage(path: string, square = false) {
     const { data, error } = await this.supabase.adminClient.from('media_records')
-      .select('id').eq('storage_path', path).eq('status', 'ready').maybeSingle();
+      .select('id,width,height').eq('storage_path', path).eq('status', 'ready').maybeSingle();
     if (error) throw new InternalServerErrorException('Unable to check image');
     if (!data) throw new BadRequestException('Upload or select an image from the Studio media library first');
+    if (square && (!data.width || data.width !== data.height)) throw new BadRequestException('Choose square artwork (4:4). Upload here to crop it automatically.');
   }
 
   async withImageUrls<T extends { image_storage_path: string }>(rows: T[]) {
@@ -70,6 +73,13 @@ export class MediaService {
     if (error) throw new ServiceUnavailableException('Image previews are unavailable; check Supabase Storage');
     const urls = new Map((data ?? []).map(item => [item.path, item.signedUrl || null]));
     return rows.map(row => ({ ...row, image_url: urls.get(row.image_storage_path) ?? null }));
+  }
+
+  async withArtworkUrls<T extends { icon_storage_path?: string | null }>(rows: T[]) {
+    const supplied = rows.filter(row => row.icon_storage_path);
+    const signed = await this.withImageUrls(supplied.map(row => ({ image_storage_path: row.icon_storage_path! })));
+    const urls = new Map(signed.map(row => [row.image_storage_path, row.image_url]));
+    return rows.map(row => ({ ...row, icon_url: row.icon_storage_path ? urls.get(row.icon_storage_path) ?? null : null }));
   }
 
   async list() {

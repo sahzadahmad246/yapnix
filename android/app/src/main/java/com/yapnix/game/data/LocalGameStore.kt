@@ -17,7 +17,7 @@ class LocalGameStore(private val context: Context) {
     private val root = File(context.filesDir, "games").apply { mkdirs() }
     suspend fun saveCatalog(games: List<Game>) = withContext(Dispatchers.IO) {
         val items = JSONArray()
-        games.forEach { game -> items.put(JSONObject().put("id", game.id).put("name", game.name).put("description", game.description).put("categoryId", game.categoryId).put("categoryName", game.categoryName).put("sessionId", game.sessionId).put("questionCount", game.questionCount)) }
+        games.forEach { game -> items.put(JSONObject().put("id", game.id).put("name", game.name).put("description", game.description).put("categoryId", game.categoryId).put("categoryName", game.categoryName).put("sessionId", game.sessionId).put("questionCount", game.questionCount).put("iconKey", game.iconKey).put("categoryIconKey", game.categoryIconKey).put("iconUrl", game.iconUrl).put("categoryIconUrl", game.categoryIconUrl).put("categoryDescription", game.categoryDescription)) }
         val pending = File(root, "catalog-pending.json")
         pending.writeText(items.toString())
         check(pending.renameTo(File(root, "catalog.json")))
@@ -27,7 +27,9 @@ class LocalGameStore(private val context: Context) {
             val items = JSONArray(File(root, "catalog.json").readText())
             (0 until items.length()).map { i ->
                 val item = items.getJSONObject(i)
-                Game(item.getString("id"), item.getString("name"), item.getString("description"), 1, item.getString("categoryId"), item.getString("categoryName"), item.getString("sessionId"), item.getInt("questionCount"), 5)
+                Game(id = item.getString("id"), name = item.getString("name"), description = item.getString("description"), difficulty = 1,
+                    categoryId = item.getString("categoryId"), categoryName = item.getString("categoryName"), sessionId = item.getString("sessionId"),
+                    questionCount = item.getInt("questionCount"), iconKey = item.optString("iconKey", "game-controller"), categoryIconKey = item.optString("categoryIconKey", "question"), iconUrl = item.optString("iconUrl"), categoryIconUrl = item.optString("categoryIconUrl"), categoryDescription = item.optString("categoryDescription"))
             }
         }.getOrDefault(emptyList())
     }

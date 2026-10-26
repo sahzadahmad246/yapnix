@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, InternalServerErrorException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { MediaService } from '../media/media.service.js';
 import { publicationIssues, type LevelContent } from './readiness.js';
 import { SupabaseService } from '../supabase/supabase.service.js';
@@ -17,6 +17,16 @@ import type {
 @Injectable()
 export class AdminService {
   constructor(private readonly supabase: SupabaseService, private readonly media: MediaService) {}
+
+  private async assertIconSchema(input: { icon_key?: string }, table: 'games' | 'game_categories') {
+    if (input.icon_key === undefined) return;
+    const { error } = await this.supabase.adminClient.from(table).select('icon_key,icon_storage_path').limit(0);
+    if (!error) return;
+    if (['42703', 'PGRST204'].includes(error.code)) {
+      throw new ServiceUnavailableException('Apply Supabase upgrade_icon_library.sql (migrations 009–010) before saving library icons. Your changes have not been saved.');
+    }
+    throw new InternalServerErrorException('Unable to check catalogue icon support');
+  }
 
   private fail(error: { code?: string; message?: string }, fallback: string): never {
     if (error.code === 'P0002') throw new NotFoundException('Content not found');
@@ -54,16 +64,20 @@ export class AdminService {
   async listCategories() {
     const { data, error } = await this.supabase.adminClient.from('game_categories').select('*').order('created_at');
     if (error) throw new InternalServerErrorException('Unable to load game categories. Apply migration 007 first.');
-    return data;
+    return this.media.withArtworkUrls(data ?? []);
   }
 
   async createCategory(input: CreateCategoryDto) {
+    await this.assertIconSchema(input, 'game_categories');
+    if (input.icon_storage_path) await this.media.assertReadyImage(input.icon_storage_path, true);
     const { data, error } = await this.supabase.adminClient.from('game_categories').insert(input).select().single();
     if (error) this.fail(error, 'Unable to create category');
     return data;
   }
 
   async updateCategory(id: string, input: UpdateCategoryDto) {
+    await this.assertIconSchema(input, 'game_categories');
+    if (input.icon_storage_path) await this.media.assertReadyImage(input.icon_storage_path, true);
     const { data, error } = await this.supabase.adminClient.from('game_categories').update(input).eq('id', id).select().maybeSingle();
     if (error) this.fail(error, 'Unable to update category');
     if (!data) throw new NotFoundException('Category not found');
@@ -78,17 +92,19 @@ export class AdminService {
     const { data: images, error: imageError } = await this.supabase.adminClient.from('media_records').select('storage_path').eq('status', 'ready');
     if (imageError) throw new InternalServerErrorException('Unable to check game images');
     const ready = new Set((images ?? []).map(image => String(image.storage_path)));
-    return (data ?? []).map(game => {
+    return this.media.withArtworkUrls((data ?? []).map(game => {
       const session = game.levels?.[0];
       const metadata = { ...game, levels: undefined };
       return { ...metadata, question_count: session?.question_count ?? 5,
         default_time_limit_seconds: session?.default_time_limit_seconds ?? 5,
         game_questions: session?.level_questions ?? [],
         publication_issues: session ? publicationIssues(session as unknown as LevelContent, ready) : ['Game configuration is missing.'] };
-    });
+    }));
   }
 
   async createGame(input: CreateGameDto) {
+    await this.assertIconSchema(input, 'games');
+    if (input.icon_storage_path) await this.media.assertReadyImage(input.icon_storage_path, true);
     const { data, error } = await this.supabase.adminClient.rpc('create_standalone_game', { content: input });
     if (error) this.fail(error, 'Unable to create game');
     return data;
@@ -109,6 +125,8 @@ export class AdminService {
   }
 
   async updateGame(id: string, input: UpdateGameDto) {
+    await this.assertIconSchema(input, 'games');
+    if (input.icon_storage_path) await this.media.assertReadyImage(input.icon_storage_path, true);
     const { data, error } = await this.supabase.adminClient.rpc('update_standalone_game', { target_game_id: id, changes: input });
     if (error) this.fail(error, 'Unable to update game');
     return data;

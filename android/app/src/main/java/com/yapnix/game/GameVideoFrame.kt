@@ -10,87 +10,59 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import kotlin.math.min
 
-/** Draws only game content and the reaction, without the phone display or tools. */
-internal fun drawGameVideoFrame(canvas: Canvas, state: GameUiState, camera: ReactionLayout, includeCamera: Boolean = true, renderWidth: Float = canvas.width.toFloat(), renderHeight: Float = canvas.height.toFloat()) {
+/** The same simple composition is used on screen and in the local video. */
+internal fun drawGameVideoFrame(canvas: Canvas, state: GameUiState, camera: ReactionLayout, includeCamera: Boolean = true,
+    renderWidth: Float = canvas.width.toFloat(), renderHeight: Float = canvas.height.toFloat(), stageOnly: Boolean = false) {
     val checkpoint = canvas.save()
-    canvas.scale(renderWidth / ReelGeometry.WIDTH, renderHeight / ReelGeometry.HEIGHT)
+    canvas.scale(renderWidth / ReelGeometry.WIDTH, renderHeight / if (stageOnly) ReelGeometry.STAGE_HEIGHT else ReelGeometry.HEIGHT)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     val ink = Color.rgb(35, 38, 33)
     val muted = Color.rgb(117, 119, 109)
-    val paper = Color.rgb(246, 245, 239)
     val accent = Color.rgb(210, 236, 135)
-    canvas.drawColor(paper)
-    paint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-    paint.textSize = 33f
-    paint.color = ink
-    canvas.drawText("yapnix", ReelGeometry.LEFT, 67f, paint)
-    paint.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-    paint.textSize = 22f
-    paint.color = muted
-    paint.textAlign = Paint.Align.RIGHT
-    canvas.drawText("${state.questionIndex + 1} / ${state.playableLevel?.questions?.size ?: 0}", ReelGeometry.RIGHT, 65f, paint)
-    paint.textAlign = Paint.Align.LEFT
-    paint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-    paint.color = ink
-    val prompt = state.playableLevel?.prompt ?: "What is this?"
-    fitText(paint, prompt, 520f, 35f)
-    canvas.drawText(prompt, ReelGeometry.LEFT, 120f, paint)
-    paint.color = accent
-    canvas.drawCircle(642f, 108f, 30f, paint)
-    paint.color = ink
-    paint.textSize = 30f
-    paint.textAlign = Paint.Align.CENTER
-    canvas.drawText(if (state.phase == SessionPhase.FEEDBACK) "✓" else if (state.phase == SessionPhase.PLAYING) "${state.remainingSeconds}" else "5", 642f, 119f, paint)
-
+    canvas.drawColor(Color.rgb(246, 245, 239))
+    if (!stageOnly) canvas.translate(0f, (ReelGeometry.HEIGHT - ReelGeometry.STAGE_HEIGHT) / 2)
+    fun text(value: String, x: Float, y: Float, width: Float, size: Float, color: Int = ink, bold: Boolean = false) {
+        paint.color = color
+        paint.textAlign = Paint.Align.CENTER
+        paint.typeface = Typeface.create("sans-serif", if (bold) Typeface.BOLD else Typeface.NORMAL)
+        fitText(paint, value, width, size)
+        canvas.drawText(value, x, y, paint)
+    }
+    text(state.playableLevel?.prompt ?: "What is this?", 360f, 78f, 624f, 46f, bold = true)
     val question = state.playableLevel?.questions?.getOrNull(state.questionIndex)
-    val imageRect = RectF(ReelGeometry.LEFT, ReelGeometry.IMAGE_TOP, ReelGeometry.RIGHT, ReelGeometry.IMAGE_BOTTOM)
+    val left = if (state.recordEnabled) ReelGeometry.LEFT else (ReelGeometry.WIDTH - ReelGeometry.IMAGE_SIZE) / 2
+    val imageRect = RectF(left, ReelGeometry.IMAGE_TOP, left + ReelGeometry.IMAGE_SIZE, ReelGeometry.IMAGE_BOTTOM)
     val imageCheckpoint = canvas.save()
-    canvas.clipPath(Path().apply { addRoundRect(imageRect, 20f, 20f, Path.Direction.CW) })
+    canvas.clipPath(Path().apply { addRoundRect(imageRect, 24f, 24f, Path.Direction.CW) })
     paint.color = Color.rgb(232, 232, 222)
     canvas.drawRect(imageRect, paint)
     state.readyImages[question?.id]?.let { drawCrop(canvas, it, imageRect, paint) }
     canvas.restoreToCount(imageCheckpoint)
-
-    paint.textAlign = Paint.Align.CENTER
-    if (state.phase == SessionPhase.FEEDBACK) {
-        paint.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        paint.textSize = 17f
-        paint.color = muted
-        canvas.drawText("THE ANSWER", 360f, 810f, paint)
-        paint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-        paint.color = ink
-        val answer = question?.primaryAnswer.orEmpty()
-        fitText(paint, answer, 608f, 35f)
-        canvas.drawText(answer, 360f, 854f, paint)
-    } else {
-        paint.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        paint.textSize = 26f
-        paint.color = ink
-        canvas.drawText("Say it out loud", 360f, 830f, paint)
+    val centre = imageRect.centerX()
+    paint.color = Color.rgb(225, 226, 216)
+    val timer = RectF(left, 470f, left + ReelGeometry.IMAGE_SIZE, 480f)
+    canvas.drawRoundRect(timer, 5f, 5f, paint)
+    paint.color = accent
+    timer.right = left + ReelGeometry.IMAGE_SIZE * (if (state.phase == SessionPhase.FEEDBACK) 0f else state.remainingSeconds / 5f)
+    canvas.drawRoundRect(timer, 5f, 5f, paint)
+    text(when { state.paused -> "Paused"; state.phase == SessionPhase.FEEDBACK -> "THE ANSWER"; state.phase == SessionPhase.PREPARING -> "Get ready…"; else -> "${state.remainingSeconds}s to guess" }, centre, 530f, 296f, 29f, muted)
+    // The answer card ends at exactly the same baseline as the reaction camera.
+    paint.color = if (state.phase == SessionPhase.FEEDBACK) accent else Color.rgb(233, 237, 222)
+    canvas.drawRoundRect(RectF(left, 552f, left + ReelGeometry.IMAGE_SIZE, ReelGeometry.CAMERA_BOTTOM), 18f, 18f, paint)
+    text(if (state.phase == SessionPhase.FEEDBACK) question?.primaryAnswer.orEmpty() else "Say it out loud", centre, 623f, 268f, 39f, bold = true)
+    if (state.recordEnabled) {
+        val pane = RectF(ReelGeometry.CAMERA_LEFT, ReelGeometry.CAMERA_TOP, ReelGeometry.RIGHT, ReelGeometry.CAMERA_BOTTOM)
+        paint.color = Color.rgb(233, 237, 222)
+        canvas.drawRoundRect(pane, 24f, 24f, paint)
+        if (includeCamera) camera.frame?.takeUnless { it.isRecycled }?.let { frame ->
+            val clip = canvas.save()
+            canvas.clipPath(Path().apply { addRoundRect(pane, 24f, 24f, Path.Direction.CW) })
+            drawCrop(canvas, frame, pane, paint)
+            canvas.restoreToCount(clip)
+        }
     }
-
-    val pane = RectF(ReelGeometry.LEFT, ReelGeometry.CAMERA_TOP, ReelGeometry.RIGHT, ReelGeometry.CAMERA_BOTTOM)
-    paint.color = ink
-    canvas.drawRoundRect(pane, 20f, 20f, paint)
-    val paneCheckpoint = canvas.save()
-    canvas.clipPath(Path().apply { addRoundRect(pane, 20f, 20f, Path.Direction.CW) })
-    if (includeCamera && state.recordEnabled && !state.paused) camera.frame?.takeUnless { it.isRecycled }?.let { frame ->
-        val bounds = ReelGeometry.cameraRect(camera.x, camera.y, camera.size, camera.round)
-        val rect = RectF(bounds.left, bounds.top, bounds.right, bounds.bottom)
-        val radius = if (camera.round) rect.width() / 2 else 14f
-        val cameraCheckpoint = canvas.save()
-        canvas.clipPath(Path().apply { addRoundRect(rect, radius, radius, Path.Direction.CW) })
-        drawCrop(canvas, frame, rect, paint)
-        canvas.restoreToCount(cameraCheckpoint)
-    }
-    canvas.restoreToCount(paneCheckpoint)
-    paint.color = muted
-    paint.textSize = 16f
-    paint.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-    paint.textAlign = Paint.Align.LEFT
-    canvas.drawText("5 SECOND CHALLENGE", ReelGeometry.LEFT, 1265f, paint)
-    paint.textAlign = Paint.Align.RIGHT
-    canvas.drawText("yapnix", ReelGeometry.RIGHT, 1265f, paint)
+    // A quiet watermark only on the exported video.
+    if (!stageOnly) text("yapnix", 360f, 750f, 200f, 24f, muted, true)
     canvas.restoreToCount(checkpoint)
 }
 

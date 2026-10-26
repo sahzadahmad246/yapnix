@@ -33,3 +33,11 @@ select id, name, is_published, gameplay_kind from public.game_categories;
 
 select column_name from information_schema.columns where table_schema = 'public'
   and table_name = 'games' and column_name = 'prompt_key';
+
+select table_name, column_name from information_schema.columns where table_schema = 'public'
+  and table_name in ('games', 'game_categories') and column_name = 'icon_storage_path';
+-- Expect both catalogue tables after migration 009.
+
+select table_name, column_name from information_schema.columns where table_schema = 'public'
+  and table_name in ('games', 'game_categories') and column_name = 'icon_key';
+-- Expect both catalogue tables after migration 010.

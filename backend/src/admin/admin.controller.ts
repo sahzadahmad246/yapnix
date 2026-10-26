@@ -46,6 +46,10 @@ export class AdminController {
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_IMAGE_BYTES, files: 1, fields: 0 } }))
   uploadImage(@UploadedFile() file?: ImageUpload) { return this.media.upload(file); }
 
+  @Post('media/artwork')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_IMAGE_BYTES, files: 1, fields: 0 } }))
+  uploadArtwork(@UploadedFile() file?: ImageUpload) { return this.media.upload(file, true); }
+
   @Get('overview')
   getOverview() {
     return this.adminService.getOverview();

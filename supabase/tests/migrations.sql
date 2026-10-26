@@ -324,6 +324,59 @@ end $$;
 set constraints all deferred;
 reset role;
 
+-- Catalogue artwork upgrades preserve progress and content, and support clearing.
+\ir ../migrations/202610260009_catalog_artwork.sql
+\ir ../migrations/202610260009_catalog_artwork.sql
+insert into public.media_records(storage_path, original_filename, mime_type, size_bytes, width, height)
+values ('artwork/guess.webp', 'guess.png', 'image/webp', 128, 512, 512);
+set local role service_role;
+select public.test_assert((public.create_standalone_game('{"name":"Artwork game","slug":"artwork-game","difficulty":1,"icon_storage_path":"artwork/guess.webp"}')->>'icon_storage_path') = 'artwork/guess.webp', 'create game saves artwork atomically');
+select public.update_standalone_game((select id from public.games where slug='foods'), '{"icon_storage_path":"artwork/guess.webp"}');
+select public.test_assert((select icon_storage_path = 'artwork/guess.webp' from public.games where slug='foods'), 'game artwork persists through RPC');
+update public.game_categories set icon_storage_path = 'artwork/guess.webp' where slug='guess';
+select public.test_assert((select icon_storage_path = 'artwork/guess.webp' from public.game_categories where slug='guess'), 'category artwork persists');
+select public.update_standalone_game((select id from public.games where slug='foods'), '{"icon_storage_path":null}');
+select public.test_assert((select icon_storage_path is null from public.games where slug='foods'), 'explicit null clears an icon');
+do $$ begin
+  begin
+    perform public.update_standalone_game((select id from public.games where slug='foods'), '{"icon_storage_path":"missing.webp"}');
+    raise exception 'Missing artwork accepted';
+  exception when foreign_key_violation then null;
+  end;
+end $$;
+select public.test_assert(exists(select 1 from public.player_progress where level_id='30000000-0000-4000-8000-000000000001'), 'artwork migration preserves saved progress');
+reset role;
+set local role anon;
+select public.test_assert(not exists(select 1 from public.games where slug='artwork-game'), 'draft game artwork is behind publication boundary');
+reset role;
+
+-- Bundled icon upgrade is repeatable and does not require uploaded artwork.
+\ir ../migrations/202610260010_catalog_icon_library.sql
+\ir ../migrations/202610260010_catalog_icon_library.sql
+set local role service_role;
+select public.test_assert((select icon_key='question' from public.game_categories where slug='guess'), 'Guess has its default library icon');
+select public.test_assert((public.create_standalone_game('{"name":"Icon game","slug":"icon-game","difficulty":1,"icon_key":"paw-print"}')->>'icon_key')='paw-print', 'create game saves a bundled icon without uploading');
+select public.update_standalone_game((select id from public.games where slug='artwork-game'), '{"icon_key":"cat","icon_storage_path":null}');
+select public.test_assert((select icon_key='cat' and icon_storage_path is null from public.games where slug='artwork-game'), 'switch from uploaded artwork to a library icon');
+update public.game_categories set icon_key='puzzle-piece' where slug='guess';
+select public.test_assert((select icon_key='puzzle-piece' from public.game_categories where slug='guess'), 'category uses selected icon key');
+do $$ begin
+  begin
+    perform public.update_standalone_game((select id from public.games where slug='icon-game'), '{"icon_key":"unknown-icon"}');
+    raise exception 'Unknown icon accepted';
+  exception when check_violation then null;
+  end;
+end $$;
+select public.test_assert(exists(select 1 from public.player_progress where level_id='30000000-0000-4000-8000-000000000001'), 'icon library preserves saved progress');
+update public.game_categories set icon_key='game-controller' where slug='guess';
+reset role;
+\ir ../migrations/202610260010_catalog_icon_library.sql
+select public.test_assert((select icon_key='game-controller' from public.game_categories where slug='guess'), 'reapplying preserves an explicitly selected default icon');
+select public.test_assert((select icon_key='cat' from public.games where slug='artwork-game'), 'reapplying preserves a selected sub-game icon');
+set local role anon;
+select public.test_assert(not exists(select 1 from public.games where slug='icon-game'), 'library icons do not bypass publication');
+reset role;
+
 -- Deleting a game cascades through levels, assignments and progress, but keeps
 -- the reusable question/answer library intact, including shared questions.
 set local role service_role;

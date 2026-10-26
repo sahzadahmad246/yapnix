@@ -5,6 +5,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.widget.Toast
+import androidx.compose.animation.core.*
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -14,7 +16,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -25,11 +26,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -86,15 +92,8 @@ class MainActivity : ComponentActivity() {
 
 @Stable
 internal class ReactionLayout {
-    var x by mutableFloatStateOf(.5f)
-    var y by mutableFloatStateOf(.5f)
-    var size by mutableFloatStateOf(.72f)
-    var round by mutableStateOf(false)
     var mirrored by mutableStateOf(true)
     @Volatile var frame: Bitmap? = null
-    val ratio get() = ReelGeometry.ratio(round)
-    val maxSize get() = ReelGeometry.maxSize(round)
-    fun reset() { x = .5f; y = .5f; size = .72f; round = false; mirrored = true }
 }
 
 @Composable
@@ -104,6 +103,8 @@ private fun YapnixApp(viewModel: GameViewModel) {
     val context = LocalContext.current
     val camera = remember { ReactionLayout() }
     val sounds = remember { RoundAudio(context) }
+    val snackbar = remember { SnackbarHostState() }
+    LaunchedEffect(state.notice) { state.notice?.let { snackbar.showSnackbar(it) } }
     DisposableEffect(Unit) { onDispose { sounds.close() } }
     LaunchedEffect(capture.saved, capture.error) {
         if (capture.saved) viewModel.showNotice("Video saved")
@@ -111,12 +112,12 @@ private fun YapnixApp(viewModel: GameViewModel) {
     }
     val tabs = listOf(AppScreen.HOME, AppScreen.PROGRESS, AppScreen.RECORDINGS, AppScreen.PROFILE)
     UpdatePanel(viewModel)
-    BackHandler(enabled = state.screen != AppScreen.HOME) {
-        if (state.screen == AppScreen.SESSION) viewModel.setForeground(false)
-        else viewModel.backToHome()
+    BackHandler(enabled = state.screen != AppScreen.HOME && state.screen != AppScreen.SESSION) {
+        if (state.screen == AppScreen.SETUP || state.screen == AppScreen.RESULTS) viewModel.backToCategory()
+        else if (state.screen != AppScreen.SESSION) viewModel.backToHome()
     }
-    Scaffold(containerColor = Paper, bottomBar = {
-        if (state.screen in tabs) NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
+    Scaffold(containerColor = Paper, snackbarHost = { SnackbarHost(snackbar) }, bottomBar = {
+        if (state.screen in tabs) NavigationBar(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).shadow(9.dp, RoundedCornerShape(27.dp)).clip(RoundedCornerShape(27.dp)), containerColor = Color.White, tonalElevation = 0.dp) {
             tabs.forEachIndexed { index, screen ->
                 NavigationBarItem(selected = state.screen == screen,
                     onClick = { sounds.click(); viewModel.navigate(screen) },
@@ -141,50 +142,108 @@ private fun YapnixApp(viewModel: GameViewModel) {
 }
 
 @Composable
+private fun YapnixWordmark() {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(29.dp).graphicsLayer(rotationZ = -12f).clip(RoundedCornerShape(9.dp)).background(Ink), contentAlignment = Alignment.Center) {
+            Text("y", color = Lime, fontSize = 26.sp, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic)
+        }
+        Text("yapnix", modifier = Modifier.padding(start = 7.dp), fontSize = 29.sp, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic, letterSpacing = (-1.7).sp, color = Ink)
+        Box(Modifier.padding(start = 3.dp, top = 17.dp).size(6.dp).clip(CircleShape).background(Color(0xFF9672E6)))
+    }
+}
+
+@Composable
+private fun GameArtwork(url: String, modifier: Modifier, iconKey: String = "game-controller") {
+    var failed by remember(url) { mutableStateOf(false) }
+    Box(modifier.clip(RoundedCornerShape(18.dp)).background(Lilac), contentAlignment = Alignment.Center) {
+        if (url.isNotBlank() && !failed) AsyncImage(model = url, contentDescription = null, contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(), onError = { failed = true })
+        else Icon(androidx.compose.ui.res.painterResource(catalogIconResource(iconKey)), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.fillMaxSize(.65f))
+    }
+}
+
+@Composable
+private fun PlayHero() {
+    val density = LocalDensity.current.density
+    val entrance = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { entrance.animateTo(1f, tween(650, easing = FastOutSlowInEasing)) }
+    val animation = rememberInfiniteTransition(label = "floating challenge")
+    val float by animation.animateFloat(-7f, 7f, infiniteRepeatable(tween(2600, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "float")
+    val turn by animation.animateFloat(-12f, 12f, infiniteRepeatable(tween(4000, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "turn")
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(30.dp)).background(Brush.linearGradient(listOf(Color(0xFFE7DFFA), Color(0xFFF0ECFF), Color(0xFFE9F2D6)))).padding(23.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).graphicsLayer { alpha = entrance.value; translationY = (1f - entrance.value) * 14f * density }) {
+            Text("A LITTLE PLAY. A BIG REACTION.", fontSize = 9.sp, letterSpacing = 1.1.sp, color = Ink, fontWeight = FontWeight.Bold)
+            Text("Think fast.\nSay it loud.", fontSize = 33.sp, lineHeight = 36.sp, letterSpacing = (-1.2).sp, fontWeight = FontWeight.Black, color = Ink, modifier = Modifier.padding(top = 14.dp))
+            Text("One picture. Five seconds.\nWhat comes to mind?", fontSize = 12.sp, lineHeight = 19.sp, color = Ink.copy(alpha = .65f), modifier = Modifier.padding(top = 12.dp))
+        }
+        Box(Modifier.width(105.dp).height(170.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.offset(x = 8.dp, y = 44.dp).size(87.dp, 17.dp).clip(CircleShape).background(Color(0xFFB7AACF).copy(alpha = .25f)))
+            Box(Modifier.offset(y = float.dp).size(85.dp).graphicsLayer(rotationZ = turn, rotationY = turn * 2, rotationX = -14f, cameraDistance = 16f * density)
+                .shadow(12.dp, RoundedCornerShape(24.dp)).clip(RoundedCornerShape(24.dp)).background(Brush.linearGradient(listOf(Color.White, Color(0xFFCFB9F5)))), contentAlignment = Alignment.Center) {
+                Text("?", color = Ink, fontSize = 64.sp, fontWeight = FontWeight.Black)
+            }
+            GameIcon("spark", Modifier.align(Alignment.TopEnd).offset(y = (-float).dp).size(24.dp), Color(0xFF8D6AC8))
+            Box(Modifier.align(Alignment.BottomStart).offset(y = (-float).dp).size(32.dp).clip(CircleShape).background(Lime), contentAlignment = Alignment.Center) { GameIcon("play", Modifier.size(15.dp), Ink) }
+        }
+    }
+}
+
+@Composable
 private fun HomeScreen(state: GameUiState, viewModel: GameViewModel, onTap: () -> Unit) {
-    var selectedCategory by remember { mutableStateOf<String?>(null) }
-    BackHandler(selectedCategory != null) { selectedCategory = null }
+    val context = LocalContext.current
+    val selectedCategory = state.selectedCategoryId
+    BackHandler(selectedCategory != null) { viewModel.selectCategory(null) }
     val categories = state.games.groupBy { it.categoryId }
     val selectedGames = selectedCategory?.let { categories[it] }
+    var showTips by remember { mutableStateOf(false) }
+    val recent = state.progress.sortedByDescending { it.lastPlayedAt }.firstNotNullOfOrNull { save -> state.games.firstOrNull { it.sessionId == save.levelId } }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp)) {
-        Row(Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 30.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (selectedCategory != null) RoundIcon("arrow", "All games", onClick = { onTap(); selectedCategory = null })
-            Text("yapnix", modifier = Modifier.weight(1f).padding(start = if (selectedCategory != null) 12.dp else 0.dp), fontSize = 27.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp, color = Ink)
-            IconButton(onClick = { onTap(); viewModel.refreshGames() }) { GameIcon("refresh", Modifier.size(20.dp), Muted, "Refresh games") }
-            AccountAvatar(state, Modifier.size(40.dp).clickable { viewModel.navigate(AppScreen.PROFILE) })
+        if (selectedGames != null) {
+            ScreenBar(selectedGames.first().categoryName, { viewModel.selectCategory(null) }) {
+                RoundIcon("spark", "How to play", onClick = { showTips = true })
+            }
+            GameArtwork(selectedGames.first().categoryIconUrl, Modifier.size(80.dp), selectedGames.first().categoryIconKey)
+            Text(selectedGames.first().categoryDescription.ifBlank { "A picture, a countdown and your first thought. Choose a sub-game and let’s play." }, color = Muted, fontSize = 15.sp, lineHeight = 23.sp, modifier = Modifier.padding(top = 17.dp))
+            TextButton(onClick = { showTips = true }) { GameIcon("play", Modifier.size(15.dp)); Spacer(Modifier.width(7.dp)); Text("How to play") }
+            Text("Pick your sub-game", fontSize = 23.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 18.dp, bottom = 16.dp))
+        } else {
+            Row(Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                YapnixWordmark()
+                Spacer(Modifier.weight(1f))
+                if (state.authSession == null) FilledTonalButton(enabled = !state.accountBusy, onClick = { viewModel.beginGoogleSignIn { context.startActivity(Intent(Intent.ACTION_VIEW, it)) } }, colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color.White)) { Text(if (state.accountBusy) "Opening…" else "Log in", fontWeight = FontWeight.Bold) }
+                else AccountAvatar(state, Modifier.size(43.dp).clickable { viewModel.navigate(AppScreen.PROFILE) })
+            }
+            PlayHero()
         }
-        Text(selectedGames?.firstOrNull()?.categoryName ?: "Let's play.", fontSize = 39.sp, lineHeight = 43.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1.5).sp, color = Ink)
-        Text(if (selectedGames != null) "Choose your next round" else "Five seconds. First thought.", color = Muted, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp, bottom = 26.dp))
         when {
-            state.loading && state.games.isEmpty() -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Ink, strokeWidth = 3.dp) }
+            state.loading && state.games.isEmpty() -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Ink) }
             state.error != null && state.games.isEmpty() -> MessageCard("You're offline", state.error, "Try again", viewModel::refreshGames)
             state.games.isEmpty() -> MessageCard("More games soon", "Check back for a new round.", "Refresh", viewModel::refreshGames)
-            selectedGames != null -> selectedGames.forEachIndexed { index, game ->
-                GameCard(game, index) { onTap(); viewModel.openGame(game) }
-                Spacer(Modifier.height(10.dp))
+            selectedGames != null -> selectedGames.forEach { game ->
+                GameCard(game) { onTap(); viewModel.openGame(game) }
+                Spacer(Modifier.height(12.dp))
             }
             else -> {
-                state.games.firstOrNull()?.let { featured ->
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Ink).clickable { onTap(); viewModel.openGame(featured) }.padding(22.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("ON YOUR MARK", color = Lime, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.7.sp)
-                            Text(featured.name, color = Paper, fontSize = 27.sp, lineHeight = 31.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Row(Modifier.padding(top = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Box(Modifier.size(32.dp).clip(CircleShape).background(Lime), contentAlignment = Alignment.Center) { GameIcon("play", Modifier.size(16.dp), Ink) }
-                                Text("Play a round", color = Paper, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 9.dp))
-                            }
+                (recent ?: state.games.firstOrNull())?.let { featured ->
+                    Row(Modifier.padding(top = 20.dp).fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Lime).clickable { onTap(); viewModel.openGame(featured) }.padding(19.dp), verticalAlignment = Alignment.CenterVertically) {
+                        GameArtwork(featured.iconUrl, Modifier.size(65.dp), featured.iconKey)
+                        Column(Modifier.weight(1f).padding(horizontal = 15.dp)) {
+                            Text(if (recent != null) "LAST PLAYED" else "ON YOUR MARK", color = Ink.copy(alpha = .6f), fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+                            Text(featured.name, color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 5.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(if (recent != null) "Jump back in" else "Your first round is waiting", color = Ink.copy(alpha = .65f), fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
                         }
-                        GameIcon(if (featured.categoryName.contains("speak", true)) "mic" else "shapes", Modifier.padding(start = 12.dp).size(78.dp), Lime)
+                        RoundIcon("play", "Play ${featured.name}") { onTap(); viewModel.openGame(featured) }
                     }
                 }
-                Row(Modifier.fillMaxWidth().padding(top = 30.dp, bottom = 14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Find your game", fontSize = 19.sp, fontWeight = FontWeight.Bold, letterSpacing = (-.3).sp)
-                    Text("${state.games.size} games", color = Muted, fontSize = 12.sp)
+                Row(Modifier.fillMaxWidth().padding(top = 27.dp, bottom = 15.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Choose your game", fontSize = 23.sp, fontWeight = FontWeight.Bold, letterSpacing = (-.6).sp)
+                    IconButton(onClick = viewModel::refreshGames) { GameIcon("refresh", Modifier.size(20.dp), Muted, "Refresh games") }
                 }
-                categories.entries.toList().chunked(2).forEachIndexed { row, group ->
+                categories.entries.toList().chunked(2).forEach { group ->
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        group.forEachIndexed { column, entry ->
-                            CategoryCard(entry.value.first().categoryName, entry.value.size, row * 2 + column, Modifier.weight(1f)) { onTap(); selectedCategory = entry.key }
+                        group.forEach { entry ->
+                            val game = entry.value.first()
+                            CategoryCard(game.categoryName, game.categoryIconUrl, game.categoryIconKey, entry.value.size, Modifier.weight(1f)) { onTap(); viewModel.selectCategory(entry.key) }
                         }
                         if (group.size == 1) Spacer(Modifier.weight(1f))
                     }
@@ -194,35 +253,47 @@ private fun HomeScreen(state: GameUiState, viewModel: GameViewModel, onTap: () -
         }
         Spacer(Modifier.height(24.dp))
     }
+    if (showTips) HowToPlaySheet { showTips = false }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HowToPlaySheet(onClose: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onClose, containerColor = Paper) {
+        Column(Modifier.padding(horizontal = 26.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            Text("Small timer. Big energy.", fontSize = 27.sp, fontWeight = FontWeight.Bold)
+            listOf("Look at the picture and listen to the question.", "Say your guess out loud before the five seconds run out.", "The answer appears when time is up. Then it’s on to the next picture.", "Want to capture it? Add your reaction before you play. Videos stay on your device.").forEachIndexed { index, text ->
+                Row(verticalAlignment = Alignment.Top) {
+                    Text("0${index + 1}", color = Color(0xFF8563BC), fontWeight = FontWeight.Bold, modifier = Modifier.width(34.dp))
+                    Text(text, color = Muted, fontSize = 14.sp, lineHeight = 22.sp)
+                }
+            }
+            Button(onClick = onClose, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(17.dp)) { Text("Let’s play") }
+        }
+    }
 }
 
 @Composable
-private fun CategoryCard(name: String, count: Int, index: Int, modifier: Modifier, onClick: () -> Unit) {
-    Column(modifier.clip(RoundedCornerShape(18.dp)).background(Color.White).border(1.dp, Line, RoundedCornerShape(18.dp)).clickable(onClick = onClick).padding(17.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
-            GameIcon(if (name.contains("speak", true) || name.contains("say", true)) "mic" else "shapes", Modifier.size(43.dp), Ink)
-            Text("0${index + 1}", color = Muted, fontSize = 10.sp)
-        }
-        Spacer(Modifier.height(28.dp))
-        Text(name, color = Ink, fontSize = 23.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, letterSpacing = (-.6).sp)
+private fun CategoryCard(name: String, iconUrl: String, iconKey: String, count: Int, modifier: Modifier, onClick: () -> Unit) {
+    Column(modifier.clip(RoundedCornerShape(24.dp)).background(Color.White).border(1.dp, Line, RoundedCornerShape(24.dp)).clickable(onClick = onClick).padding(17.dp)) {
+        GameArtwork(iconUrl, Modifier.fillMaxWidth().aspectRatio(1f), iconKey)
+        Text(name, color = Ink, fontSize = 23.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 16.dp), letterSpacing = (-.6).sp)
         Row(Modifier.fillMaxWidth().padding(top = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("$count ${if (count == 1) "game" else "games"}", color = Muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+            Text("$count ${if (count == 1) "sub-game" else "sub-games"}", color = Muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
             GameIcon("chevron", Modifier.size(17.dp), Ink)
         }
     }
 }
 
 @Composable
-private fun GameCard(game: Game, index: Int, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp)).background(Color.White).border(1.dp, Line, RoundedCornerShape(17.dp)).clickable(onClick = onClick).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(57.dp).clip(RoundedCornerShape(12.dp)).background(if (index % 2 == 0) Lilac else Peach), contentAlignment = Alignment.Center) {
-            GameIcon(if (game.categoryName.contains("speak", true)) "mic" else "picture", Modifier.size(28.dp), Ink)
-        }
+private fun GameCard(game: Game, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color.White).border(1.dp, Line, RoundedCornerShape(22.dp)).clickable(onClick = onClick).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        GameArtwork(game.iconUrl, Modifier.size(72.dp), game.iconKey)
         Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
-            Text(game.name, color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text("${game.questionCount} pictures · 5s", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 5.dp))
+            Text(game.name, color = Ink, fontSize = 19.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(game.description.ifBlank { "Five seconds. Your first thought." }, color = Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 5.dp))
         }
-        GameIcon("chevron", Modifier.size(19.dp), Ink)
+        GameIcon("play", Modifier.size(20.dp), Ink)
     }
 }
 
@@ -240,6 +311,7 @@ private fun GameSetupScreen(state: GameUiState, viewModel: GameViewModel, camera
     }
     var cameraReady by remember { mutableStateOf(false) }
     var toolsOpen by remember { mutableStateOf(false) }
+    var showTips by remember { mutableStateOf(false) }
     var permissionMessage by remember { mutableStateOf<String?>(null) }
     val startRound = {
         permissionMessage = null
@@ -261,15 +333,15 @@ private fun GameSetupScreen(state: GameUiState, viewModel: GameViewModel, camera
     val previewQuestion = state.playableLevel?.questions?.getOrNull(state.savedProgress?.takeUnless { it.completed }?.questionIndex ?: 0)
         ?: state.playableLevel?.questions?.firstOrNull()
     Column(Modifier.fillMaxSize().padding(horizontal = 22.dp)) {
-        ScreenBar("Ready to play", viewModel::backToHome) {
+        ScreenBar(state.selectedGame?.name ?: "Your challenge", viewModel::backToCategory) {
             if (ready && state.recordEnabled) RoundIcon("edit", "Camera settings", onClick = { toolsOpen = true })
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Column {
-                Text(state.selectedGame?.name ?: "Your challenge", fontSize = 29.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold)
-                Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Pill("picture", "${state.playableLevel?.questions?.size ?: state.selectedGame?.questionCount ?: 0} pictures", Color.White, Muted)
-                    Pill("camera", "HD · 9:16", Lilac, Ink)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                GameArtwork(state.selectedGame?.iconUrl.orEmpty(), Modifier.size(65.dp), state.selectedGame?.iconKey ?: "game-controller")
+                Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                    Text(state.selectedGame?.description?.ifBlank { "Think fast and say your guess out loud." } ?: "Get ready for your next challenge.", color = Muted, fontSize = 14.sp, lineHeight = 21.sp)
+                    TextButton(onClick = { showTips = true }, contentPadding = PaddingValues(0.dp)) { Text("How to play", fontWeight = FontWeight.Bold) }
                 }
             }
             if (state.loading) {
@@ -278,24 +350,25 @@ private fun GameSetupScreen(state: GameUiState, viewModel: GameViewModel, camera
                     Text("Saving pictures · ${state.loadedImages}/${state.totalImages}", color = Ink, fontSize = 13.sp, modifier = Modifier.padding(top = 14.dp))
                 }
             } else if (state.error != null) {
-                MessageCard("Couldn't load this game", state.error, "Back to games", viewModel::backToHome)
+                MessageCard("Couldn't load this game", state.error, "Back to games", viewModel::backToCategory)
             } else if (ready) {
                 val previewIndex = state.playableLevel?.questions?.indexOfFirst { it.id == previewQuestion?.id }?.coerceAtLeast(0) ?: 0
                 ReactionStage(state.copy(questionIndex = previewIndex, phase = SessionPhase.PREPARING), state.recordEnabled, camera,
                     onError = { permissionMessage = it }, onCameraReady = { cameraReady = it })
             }
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color.White).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                GameIcon("camera", Modifier.size(23.dp), Ink)
-                Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                    Text("Record my reaction", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                    Text("Camera + microphone", color = Muted, fontSize = 11.sp)
+            OutlinedButton(onClick = {
+                permissionMessage = null
+                if (state.recordEnabled) { viewModel.setRecording(false); cameraReady = false }
+                else if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) viewModel.setRecording(true)
+                else cameraPermission.launch(Manifest.permission.CAMERA)
+            }, enabled = !pendingStart && !capture.starting && !capture.finalizing, modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp), colors = ButtonDefaults.outlinedButtonColors(containerColor = if (state.recordEnabled) Lime else Color.White), contentPadding = PaddingValues(17.dp)) {
+                GameIcon("camera", Modifier.size(25.dp), Ink)
+                Column(Modifier.weight(1f).padding(start = 13.dp)) {
+                    Text(if (state.recordEnabled) "Reaction camera is ready" else "Add your reaction", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Text(if (state.recordEnabled) "Tap to play without recording" else "Capture your face + voice · saved on device", color = Muted, fontSize = 11.sp)
                 }
-                Switch(checked = state.recordEnabled, onCheckedChange = { enabled ->
-                    permissionMessage = null
-                    if (!enabled) { viewModel.setRecording(false); cameraReady = false }
-                    else if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) viewModel.setRecording(true)
-                    else cameraPermission.launch(Manifest.permission.CAMERA)
-                })
+                GameIcon(if (state.recordEnabled) "check" else "chevron", Modifier.size(20.dp), Ink)
             }
 
             permissionMessage?.let { Text(it, color = Color(0xFFB34242), fontSize = 12.sp) }
@@ -313,33 +386,19 @@ private fun GameSetupScreen(state: GameUiState, viewModel: GameViewModel, camera
         }
     }
     if (toolsOpen) CameraToolsDrawer(camera) { toolsOpen = false }
+    if (showTips) HowToPlaySheet { showTips = false }
 }
 
 @Composable
 private fun ReactionStage(state: GameUiState, showCamera: Boolean, camera: ReactionLayout, onError: (String) -> Unit, onCameraReady: (Boolean) -> Unit = {}, modifier: Modifier = Modifier) {
-    BoxWithConstraints(modifier.fillMaxWidth().aspectRatio(9f / 16f).clip(RoundedCornerShape(14.dp)).border(1.dp, Line, RoundedCornerShape(14.dp))) {
+    BoxWithConstraints(modifier.fillMaxWidth().aspectRatio(ReelGeometry.WIDTH / ReelGeometry.STAGE_HEIGHT)) {
         val widthPx = constraints.maxWidth.toFloat()
-        val paneWidthPx = widthPx * ReelGeometry.PANE_WIDTH / ReelGeometry.WIDTH
-        val paneHeightPx = widthPx * ReelGeometry.PANE_HEIGHT / ReelGeometry.WIDTH
-        Canvas(Modifier.fillMaxSize()) { drawGameVideoFrame(drawContext.canvas.nativeCanvas, state, camera, includeCamera = false, renderWidth = size.width, renderHeight = size.height) }
+        Canvas(Modifier.fillMaxSize()) { drawGameVideoFrame(drawContext.canvas.nativeCanvas, state, camera, includeCamera = false, renderWidth = size.width, renderHeight = size.height, stageOnly = true) }
         if (showCamera) {
-            val rect = ReelGeometry.cameraRect(camera.x, camera.y, camera.size, camera.round)
-            val shape = if (camera.round) CircleShape else RoundedCornerShape(8.dp)
+            val rect = ReelGeometry.cameraRect()
             Box(Modifier.offset { IntOffset((rect.left * widthPx / ReelGeometry.WIDTH).toInt(), (rect.top * widthPx / ReelGeometry.WIDTH).toInt()) }
-                .size(maxWidth * (rect.width / ReelGeometry.WIDTH), maxWidth * (rect.height / ReelGeometry.WIDTH))
-                .pointerInput(widthPx, camera.round) {
-                    detectTransformGestures { _, pan, zoom, _ ->
-                        camera.size = (camera.size * zoom).coerceIn(.30f, camera.maxSize)
-                        camera.x = (camera.x + pan.x / (paneWidthPx * (1-camera.size)).coerceAtLeast(1f)).coerceIn(0f,1f)
-                        camera.y = (camera.y + pan.y / (paneHeightPx-paneWidthPx*camera.size*camera.ratio).coerceAtLeast(1f)).coerceIn(0f,1f)
-                    }
-                }.clip(shape)) {
+                .size(maxWidth * (rect.width / ReelGeometry.WIDTH), maxWidth * (rect.height / ReelGeometry.WIDTH)).clip(RoundedCornerShape(12.dp))) {
                 ReactionCamera(modifier = Modifier.fillMaxSize(), onError = onError, onFrame = { camera.frame = it }, mirrored = camera.mirrored, onReady = onCameraReady)
-            }
-        } else {
-            Row(Modifier.offset(y = maxWidth * (ReelGeometry.CAMERA_TOP / ReelGeometry.WIDTH)).fillMaxWidth().height(maxWidth * (ReelGeometry.PANE_HEIGHT / ReelGeometry.WIDTH)), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                GameIcon("camera", Modifier.size(18.dp), Paper.copy(alpha = .5f))
-                Text("Camera off", color = Paper.copy(alpha = .5f), fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
             }
         }
     }
@@ -348,32 +407,14 @@ private fun ReactionStage(state: GameUiState, showCamera: Boolean, camera: React
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CameraToolsDrawer(camera: ReactionLayout, onClose: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onClose, containerColor = Paper, dragHandle = null) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(top = 16.dp, bottom = 26.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Camera", color = Ink, fontWeight = FontWeight.Bold, fontSize = 23.sp, modifier = Modifier.weight(1f))
-                RoundIcon("close", "Close camera settings", onClose)
-            }
-            Text("Drag or pinch your reaction to frame it.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp, bottom = 18.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                GameIcon("resize", Modifier.size(20.dp), Muted)
-                Slider(value = camera.size.coerceIn(.30f, camera.maxSize), onValueChange = { camera.size = it }, valueRange = .30f..camera.maxSize, modifier = Modifier.weight(1f).padding(horizontal = 14.dp))
-                Text("${(camera.size * 100).toInt()}%", color = Muted, fontSize = 12.sp)
-            }
-            Row(Modifier.fillMaxWidth().padding(top = 9.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                CameraTool("mirror", "Mirror", camera.mirrored, Modifier.weight(1f)) { camera.mirrored = !camera.mirrored }
-                CameraTool(if (camera.round) "circle" else "square", "Shape", camera.round, Modifier.weight(1f)) { camera.round = !camera.round; camera.size = camera.size.coerceAtMost(camera.maxSize) }
-                CameraTool("reset", "Reset", false, Modifier.weight(1f), camera::reset)
+    ModalBottomSheet(onDismissRequest = onClose, containerColor = Paper) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 30.dp)) {
+            Text("Your reaction", fontSize = 26.sp, fontWeight = FontWeight.Bold)
+            Text("Your portrait sits beside the picture in your saved video.", color = Muted, fontSize = 14.sp, modifier = Modifier.padding(vertical = 14.dp))
+            FilledTonalButton(onClick = { camera.mirrored = !camera.mirrored }, modifier = Modifier.fillMaxWidth()) {
+                GameIcon("mirror", Modifier.size(22.dp)); Spacer(Modifier.width(10.dp)); Text(if (camera.mirrored) "Mirror camera: on" else "Mirror camera: off")
             }
         }
-    }
-}
-
-@Composable
-private fun CameraTool(icon: String, label: String, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    Column(modifier.clip(RoundedCornerShape(14.dp)).background(if (active) Lime else Color.White).clickable(onClick = onClick).padding(vertical = 15.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        GameIcon(icon, Modifier.size(23.dp), Ink)
-        Text(label, color = Ink, fontSize = 12.sp, modifier = Modifier.padding(top = 7.dp))
     }
 }
 
@@ -385,7 +426,14 @@ private fun SessionScreen(state: GameUiState, viewModel: GameViewModel, camera: 
     val audio = remember { RoundAudio(context) }
     val capture by ScreenRecordingService.status.collectAsState()
     var feedbackReady by remember(question?.id) { mutableStateOf(false) }
-    var toolsOpen by remember { mutableStateOf(false) }
+    var confirmingLeave by remember { mutableStateOf(false) }
+    var resumeAfterCancel by remember { mutableStateOf(false) }
+    val requestLeave = {
+        resumeAfterCancel = !state.paused
+        viewModel.setForeground(false)
+        confirmingLeave = true
+    }
+    BackHandler { requestLeave() }
     var cameraStreaming by remember { mutableStateOf(false) }
     var cameraError by remember { mutableStateOf<String?>(null) }
     val readyToPrompt = !state.recordEnabled || !capture.active || cameraStreaming || cameraError != null
@@ -399,7 +447,10 @@ private fun SessionScreen(state: GameUiState, viewModel: GameViewModel, camera: 
         onDispose { ScreenRecordingService.drawFrame = null; audio.close(); ScreenRecordingService.stop(context) }
     }
     LaunchedEffect(Unit) { audio.start() }
-    LaunchedEffect(state.paused) { if (state.paused) { audio.stop(); ScreenRecordingService.stop(context) } }
+    LaunchedEffect(state.paused) {
+        ScreenRecordingService.setPaused(state.paused)
+        if (state.paused) { audio.stop(); Toast.makeText(context, "Game paused. Tap play to continue.", Toast.LENGTH_SHORT).show() }
+    }
     // Images were decoded before Play. Mark the current picture ready with no visual delay.
     LaunchedEffect(question?.id) { if (question != null && state.readyImages[question.id] != null) viewModel.imageReady(question.id) }
     LaunchedEffect(question?.id, state.phase, state.imageReadyId, state.paused, readyToPrompt) {
@@ -421,39 +472,31 @@ private fun SessionScreen(state: GameUiState, viewModel: GameViewModel, camera: 
         if (!state.paused && state.phase == SessionPhase.FEEDBACK && feedbackReady) { delay(1_200); viewModel.advanceQuestion() }
     }
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
-        Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            RoundIcon("pause", "Pause round", onClick = { viewModel.setForeground(false) })
-            Text(state.selectedGame?.name ?: "5 second challenge", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f).padding(horizontal = 12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (capture.active) {
-                Box(Modifier.size(6.dp).clip(CircleShape).background(Color(0xFFC85442)))
-                Text(" REC", color = Color(0xFFAD4537), fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 10.dp))
-                RoundIcon("edit", "Camera settings", onClick = { toolsOpen = true })
+        ScreenBar(state.selectedGame?.name ?: "Your challenge", requestLeave) {
+            RoundIcon(if (state.paused) "play" else "pause", if (state.paused) "Resume game" else "Pause game") {
+                if (state.paused) viewModel.resumeSession() else viewModel.setForeground(false)
             }
         }
+        LinearProgressIndicator(progress = { state.questionIndex.toFloat() / (playable?.questions?.size ?: 1).coerceAtLeast(1) }, modifier = Modifier.fillMaxWidth().height(4.dp).clip(CircleShape), color = Color(0xFFA68ACE), trackColor = Line)
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            val reelWidth = minOf(maxWidth, maxHeight * (9f / 16f))
-            ReactionStage(state, capture.active && !state.paused, camera,
+            val reelWidth = minOf(maxWidth, maxHeight * (ReelGeometry.WIDTH / ReelGeometry.STAGE_HEIGHT))
+            ReactionStage(state, state.recordEnabled && cameraError == null, camera,
                 onError = { cameraError = it; viewModel.showNotice(it); ScreenRecordingService.stop(context) },
                 onCameraReady = { cameraStreaming = it }, modifier = Modifier.width(reelWidth))
         }
         Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
             GameIcon(if (capture.active) "mic" else "volume", Modifier.size(15.dp), Muted)
-            Text(if (capture.active) "Your reaction + sound · HD" else "Say your answer out loud", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(start = 7.dp))
+            Text(if (state.paused) "Paused · tap play when you’re ready" else if (capture.active) "Recording your reaction" else "Say your answer out loud", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(start = 7.dp))
         }
         (cameraError ?: capture.error)?.let { Text(it, color = Color(0xFFB34242), fontSize = 12.sp, modifier = Modifier.padding(bottom = 10.dp)) }
     }
-    if (toolsOpen) CameraToolsDrawer(camera) { toolsOpen = false }
-    if (state.paused) AlertDialog(onDismissRequest = viewModel::resumeSession,
-        icon = { GameIcon("pause", Modifier.size(32.dp), Ink) }, title = { Text("Take a breather") },
-        text = { Text(when {
-            capture.finalizing -> "Saving your video…"
-            capture.saved -> "Your video is saved."
-            capture.error != null -> capture.error.orEmpty()
-            state.recordEnabled -> "Recording stops when paused."
-            else -> "Ready when you are."
-        }) },
-        confirmButton = { TextButton(onClick = viewModel::resumeSession) { Text("Resume") } },
-        dismissButton = { TextButton(onClick = viewModel::backToHome) { Text("Leave round") } })
+    if (confirmingLeave) {
+        val cancel = { confirmingLeave = false; if (resumeAfterCancel) viewModel.resumeSession() }
+        AlertDialog(onDismissRequest = cancel, title = { Text("Leave this round?") },
+            text = { Text(if (state.recordEnabled) "Your progress and the reaction recorded so far will be saved on this device." else "Your progress is saved. You can pick up here later.") },
+            confirmButton = { TextButton(onClick = { confirmingLeave = false; ScreenRecordingService.stop(context); viewModel.backToCategory() }) { Text("Save & leave") } },
+            dismissButton = { TextButton(onClick = cancel) { Text("Keep playing") } })
+    }
 }
 
 @Composable
@@ -466,9 +509,12 @@ private fun ResultsScreen(state: GameUiState, viewModel: GameViewModel) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(26.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Box(Modifier.size(110.dp).clip(CircleShape).background(Lime), contentAlignment = Alignment.Center) { GameIcon("check", Modifier.size(52.dp), Ink) }
         Spacer(Modifier.height(28.dp))
-        Text("Round complete.", color = Ink, fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp)
-        Text("${state.playableLevel?.questions?.size ?: 0} pictures. Nice one.", color = Muted, fontSize = 15.sp, modifier = Modifier.padding(top = 8.dp))
-        Spacer(Modifier.height(30.dp))
+        Text("You played it loud!", color = Ink, fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp)
+        Text("Round complete · ${state.selectedGame?.name.orEmpty()}", color = Muted, fontSize = 15.sp, modifier = Modifier.padding(top = 8.dp))
+        Row(Modifier.fillMaxWidth().padding(top = 25.dp, bottom = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            StatCard("${state.playableLevel?.questions?.size ?: 0}", "Pictures revealed", Color.White, Modifier.weight(1f))
+            StatCard("5s", "Every first thought", Lilac, Modifier.weight(1f))
+        }
         if (state.recordEnabled) {
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Color.White).padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 when {
@@ -483,7 +529,7 @@ private fun ResultsScreen(state: GameUiState, viewModel: GameViewModel) {
         Button(onClick = viewModel::replay, modifier = Modifier.fillMaxWidth().height(58.dp), shape = RoundedCornerShape(20.dp)) {
             GameIcon("play", Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("Play again", fontWeight = FontWeight.Bold, fontSize = 16.sp)
         }
-        TextButton(onClick = viewModel::backToHome, modifier = Modifier.padding(top = 8.dp)) { Text("Explore games", color = Muted) }
+        TextButton(onClick = viewModel::backToCategory, modifier = Modifier.padding(top = 8.dp)) { Text("More sub-games", color = Muted) }
         if (state.showSignInPrompt && state.authSession == null) {
             Spacer(Modifier.height(14.dp))
             AccountPanel(state, viewModel)
@@ -591,24 +637,16 @@ private fun AccountPanel(state: GameUiState, viewModel: GameViewModel, showIdent
 
 @Composable
 private fun ScreenBar(title: String, onBack: () -> Unit, trailing: (@Composable () -> Unit)? = null) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-        RoundIcon("arrow", "Back", onClick = onBack)
-        Text(title, modifier = Modifier.weight(1f).padding(start = 12.dp), color = Muted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-        trailing?.invoke()
+    Box(Modifier.fillMaxWidth().height(76.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.align(Alignment.CenterStart)) { RoundIcon("arrow", "Back", onClick = onBack) }
+        Text(title, modifier = Modifier.padding(horizontal = 54.dp), color = Ink, fontSize = 19.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Box(Modifier.align(Alignment.CenterEnd)) { trailing?.invoke() }
     }
 }
 
 @Composable
 private fun RoundIcon(icon: String, description: String, onClick: () -> Unit) {
     IconButton(onClick = onClick, modifier = Modifier.size(42.dp).clip(CircleShape).background(Color.White)) { GameIcon(icon, Modifier.size(21.dp), Ink, description) }
-}
-
-@Composable
-private fun Pill(icon: String, label: String, background: Color, tint: Color) {
-    Row(Modifier.clip(RoundedCornerShape(10.dp)).background(background).padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-        GameIcon(icon, Modifier.size(14.dp), tint)
-        Text(label, modifier = Modifier.padding(start = 5.dp), color = tint, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-    }
 }
 
 @Composable

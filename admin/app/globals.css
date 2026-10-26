@@ -308,3 +308,16 @@ tbody tr:last-child td { border-bottom: 0; }
   .topbar > div { min-width: 0; max-width: 100%; }
   .topbar h1 { overflow-wrap: anywhere; }
 }
+
+.catalog-artwork { width: 88px; height: 88px; object-fit: cover; border-radius: 20px; margin-top: 16px; }
+.square-artwork .image-preview { width: 128px; height: 128px; aspect-ratio: 1; object-fit: cover; border-radius: 20px; }
+
+.artwork-picker { border: 1px solid var(--line, #e2e3de); border-radius: 16px; padding: 16px; margin: 12px 0 20px; }
+.selected-catalog-icon { display: flex; align-items: center; gap: 14px; padding: 16px 0; }
+.selected-catalog-icon > img { width: 64px; height: 64px; padding: 9px; background: #f3eff9; border-radius: 16px; }
+.catalog-icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; max-height: 290px; overflow-y: auto; padding: 6px 3px; }
+.catalog-icon-option { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 13px 6px; border: 1px solid #e1e2d8; border-radius: 13px; background: white; color: #353930; cursor: pointer; }
+.catalog-icon-option img { width: 38px; height: 38px; }
+.catalog-icon-option span { font-size: 11px; }
+.catalog-icon-option.selected { background: #f0eafa; border: 2px solid #7855b5; padding: 12px 5px; }
+.catalog-icon-option:focus-visible { outline: 3px solid #7855b5; outline-offset: 2px; }

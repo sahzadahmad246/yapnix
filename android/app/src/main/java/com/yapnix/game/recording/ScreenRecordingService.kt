@@ -32,6 +32,7 @@ class ScreenRecordingService : Service() {
     private val main = Handler(Looper.getMainLooper())
     private lateinit var workerThread: HandlerThread
     private lateinit var worker: Handler
+    private var recordingPaused = false
     private var running = false
     private var stopping = false
     private var destroyed = false
@@ -50,6 +51,7 @@ class ScreenRecordingService : Service() {
     private val frame = object : Runnable {
         override fun run() {
             if (!running || stopping) return
+            if (recordingPaused) { main.postDelayed(this, frameIntervalMs); return }
             val painter = drawFrame
             val bitmap = frameBitmap
             val canvas = frameCanvas
@@ -308,6 +310,25 @@ class ScreenRecordingService : Service() {
             catch (error: Exception) {
                 Log.e(TAG, "Could not request recording service", error)
                 mutableStatus.value = CaptureStatus(error = "Could not start recording. Please try again.")
+            }
+        }
+
+        /** Pause the same MP4 so a resumed round keeps its earlier footage. */
+        fun setPaused(paused: Boolean) {
+            val service = runningService ?: return
+            service.main.post {
+                if (!service.running || service.stopping || service.recordingPaused == paused) return@post
+                service.recordingPaused = paused
+                service.worker.post {
+                    try {
+                        if (service.encoderStarted) {
+                            if (paused) service.recorder?.pause() else service.recorder?.resume()
+                        }
+                    } catch (error: Exception) {
+                        Log.e(TAG, "Could not pause or resume reaction", error)
+                        service.main.post { service.finishRecording("Recording interrupted. Your reaction so far was saved if playable.") }
+                    }
+                }
             }
         }
 

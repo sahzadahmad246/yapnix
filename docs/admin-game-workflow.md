@@ -30,8 +30,8 @@ Rebuild/update Android alongside the backend. Old public level routes remain for
 ## Add Animals with five questions
 
 1. Open Categories. Guess is created by the migration; click its Games button.
-2. Click New game. Choose Guess, name it Animals, set Number of questions to 5 and Seconds per question to 5. Save.
-3. The game opens directly to Questions & answers. Add pictures of a cat, dog, elephant, lion and cow, with those names as primary answers. Add alternative accepted names where appropriate. Use en-US for English answers.
+2. Click New game. Choose Guess, select the Animals icon from the icon library, name it Animals, set Number of questions to 5 and Seconds per question to 5. Save.
+3. The game opens directly to Questions & answers. Add pictures of a cat, dog, elephant, lion and cow, with those names as primary answers. Only the primary name is needed; it is shown and spoken when the timer ends. Use en-US for English answers.
 4. New questions are selected automatically. You can also select existing questions from the library. Use arrows to choose play order.
 5. Click Save game questions. Creating a reusable question and assigning it to the game are separate saves, so the UI marks unsaved selections.
 6. Publish game once all five active questions have ready images and correct answers. Guess must also be published for players to see Animals.
@@ -63,8 +63,8 @@ For the five already-uploaded animal pictures:
 2. If Cat, Dog, Elephant, Lion and Cow already appear as image questions, select
    them directly; do not create duplicates.
 3. If they are only uploaded files, choose Add new image & answer → Browse uploaded
-   images. Pick the cat picture and enter `cat` with optional aliases `kitty, domestic cat`.
-   Save, then repeat with `dog` (aliases `doggy, doggie`), `elephant`, `lion`, and `cow`.
+   images. Pick the cat picture and enter `cat` as the reveal answer.
+   Save, then repeat with `dog`, `elephant`, `lion`, and `cow`.
    Use en-US and difficulty 1 for all five. No re-upload is needed.
 4. Arrange Cat → Dog → Elephant → Lion → Cow. Save game questions, then Publish game.
 
@@ -78,3 +78,17 @@ changes restores the saved list. Remove all from game stages an empty selection;
 saving it leaves the game as a non-playable draft. Saving changed selections never
 deletes reusable questions or files. You can add up to 100 questions, independently
 of the starting target entered when creating the game.
+
+## Game and sub-game artwork (migration 009)
+
+Android labels Guess a game and Animals a sub-game. Studio keeps the existing category → game database terminology to preserve content and progress IDs. Both category and game forms ask for an icon/image. New records require a selection in Studio; existing records can keep their fallback icon or clear their artwork. Uploads through these forms are centre-cropped to 512 × 512 (4:4 = 1:1). The media library filters to square images; non-square artwork is also rejected by the backend.
+
+For installations already on migration 008, run [upgrade_catalog_artwork.sql](../supabase/sql-editor/upgrade_catalog_artwork.sql). Earlier installations should use the complete [upgrade_existing.sql](../supabase/sql-editor/upgrade_existing.sql). Apply SQL before deploying the API/admin update. The migration adds nullable `icon_storage_path` foreign keys to `game_categories` and `games` and extends the atomic game RPCs. No content or progress IDs change. Icons use the private content bucket; guest APIs sign only artwork belonging to published catalogue content. Existing signed URLs expire after one hour, as with question pictures.
+
+The question form no longer asks for accepted-answer aliases because the player reveals answers without evaluating speech. New questions need only a primary reveal answer. Existing aliases and the `question_answers` table remain for compatibility with older clients, existing RPCs and publication checks; omitted aliases are preserved when editing. Dropping that table would require a separate coordinated schema/API migration.
+
+## Choose a bundled icon (migration 010)
+
+In a category/game form, **Icon library** is selected by default. Search Animals, food, transport, music or another theme and click an icon. The preview shows the selected icon; saving requires no media upload. Category icons appear on Android’s home/game-family cards; game icons appear on its sub-game cards. Existing custom artwork opens in **Custom image** mode. Choose **Icon library** to replace it, or keep uploading a square image as before. Question pictures still use uploaded images.
+
+Use [upgrade_icon_library.sql](../supabase/sql-editor/upgrade_icon_library.sql) for a database on migrations 001–008 or later; it contains both 009 and 010. `icon_key` is a non-null, allowlisted text field, defaulting to `game-controller`. Existing Guess categories receive `question` only when the new field is initially populated; reapplying preserves selected keys and images. The API rejects unknown keys. Studio and Android use assets generated from `shared/catalog-icons`; future unknown keys fall back safely in Android. Run `npm run icons:check` before publishing a new player.

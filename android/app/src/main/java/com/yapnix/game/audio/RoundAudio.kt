@@ -7,6 +7,7 @@ import android.media.SoundPool
 import android.media.ToneGenerator
 import android.os.Handler
 import android.os.Looper
+import android.speech.tts.Voice
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.yapnix.game.R
@@ -20,6 +21,7 @@ class RoundAudio(context: Context) {
     private var closed = false
     private var pendingStart: (() -> Unit)? = null
     private var completion: (() -> Unit)? = null
+    private val roundVoices = mutableMapOf<String, Voice>()
     private var utterance = 0
     var muted: Boolean = false
     private val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME)
@@ -62,6 +64,19 @@ class RoundAudio(context: Context) {
         val start = start@{
             if (closed || id != utterance) return@start
             if (!ready || engine.setLanguage(Locale.forLanguageTag(language)) < 0) { finish(); return@start }
+            // Stay offline and keep one randomly chosen narrator throughout this round.
+            // Android exposes quality and locale, but does not expose a reliable gender field.
+            val locale = Locale.forLanguageTag(language)
+            val voice = roundVoices[language] ?: run {
+                val local = engine.voices.orEmpty().filter { !it.isNetworkConnectionRequired && it.locale.language == locale.language && !it.features.orEmpty().contains("notInstalled") }
+                val regional = local.filter { it.locale.country == locale.country }.ifEmpty { local }
+                val quality = regional.maxOfOrNull { it.quality }
+                regional.filter { it.quality == quality }.randomOrNull()?.also { roundVoices[language] = it }
+            }
+            if (voice == null) { finish(); return@start }
+            engine.voice = voice
+            engine.setSpeechRate(.94f)
+            engine.setPitch(1f)
             if (engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, id.toString()) == TextToSpeech.ERROR) finish()
             handler.postDelayed({ if (id == utterance) { engine.stop(); finish() } }, 12_000)
         }

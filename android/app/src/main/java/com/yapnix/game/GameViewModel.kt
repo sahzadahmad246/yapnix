@@ -39,6 +39,7 @@ data class GameUiState(
     val screen: AppScreen = AppScreen.HOME,
     val games: List<Game> = emptyList(),
     val selectedGame: Game? = null,
+    val selectedCategoryId: String? = null,
     val selectedLevel: Level? = null,
     val playableLevel: PlayableLevel? = null,
     val savedProgress: SavedProgress? = null,
@@ -96,7 +97,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             var writeFailure: Throwable? = null
             for (command in writes) when (command) {
-                is ProgressWrite.Save -> try { progressStore.save(command.progress); writeFailure = null }
+                is ProgressWrite.Save -> try {
+                    progressStore.save(command.progress); writeFailure = null
+                    mutableState.value = mutableState.value.copy(progress = (mutableState.value.progress.filterNot { it.levelId == command.progress.levelId } + command.progress))
+                }
                     catch (failure: Exception) {
                         if (failure is CancellationException) throw failure
                         writeFailure = failure
@@ -326,10 +330,19 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun selectCategory(id: String?) { mutableState.value = mutableState.value.copy(selectedCategoryId = id) }
+
+    fun backToCategory() {
+        val categoryId = mutableState.value.selectedGame?.categoryId ?: mutableState.value.selectedCategoryId
+        backToHome()
+        selectCategory(categoryId)
+    }
+
     fun backToHome() {
         contentJob?.cancel()
         mutableState.value = mutableState.value.copy(
             screen = AppScreen.HOME,
+            selectedCategoryId = null,
             loading = false,
             selectedGame = null,
             selectedLevel = null,

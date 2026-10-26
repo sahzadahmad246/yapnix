@@ -17,7 +17,7 @@ export function readContentChanges(kind: ContentKind, data: FormData): ContentRo
   };
   return {
     image_storage_path: text('image_storage_path'), primary_answer: text('primary_answer'),
-    accepted_answers: [...new Set(text('aliases').split(',').map(answer => answer.trim()).filter(Boolean))],
+    ...(data.has('aliases') ? { accepted_answers: [...new Set(text('aliases').split(',').map(answer => answer.trim()).filter(Boolean))] } : {}),
     difficulty: Number(data.get('difficulty')), language: text('language'), is_active: data.has('is_active'),
   };
 }

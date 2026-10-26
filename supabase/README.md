@@ -4,8 +4,8 @@ Run SQL in your Supabase project's **SQL Editor**, using the `postgres` role. Th
 
 ## Choose one complete script
 
-- **Existing Yapnix tables / migration 001 already applied:** copy all of [upgrade_existing.sql](sql-editor/upgrade_existing.sql) into a new query and Run. Includes migrations 002–008 and Storage. It is safe to reapply these upgrades.
-- **Fresh project with no Yapnix tables:** use [setup_fresh.sql](sql-editor/setup_fresh.sql). Includes migrations 001–008 and Storage. The guard refuses to run over existing tables.
+- **Existing Yapnix tables / migration 001 already applied:** copy all of [upgrade_existing.sql](sql-editor/upgrade_existing.sql) into a new query and Run. Includes migrations 002–010 and Storage. It is safe to reapply these upgrades.
+- **Fresh project with no Yapnix tables:** use [setup_fresh.sql](sql-editor/setup_fresh.sql). Includes migrations 001–010 and Storage. The guard refuses to run over existing tables.
 
 Do not run both scripts as separate setup steps. They run in a transaction: on error, all changes in that run roll back. Neither script deletes your content. They do not change Google provider settings or grant anyone administrator access.
 
@@ -17,7 +17,7 @@ Do not run both scripts as separate setup steps. They run in a transaction: on e
 4. Configure the backend's ignored environment file with `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`. Set production `CORS_ORIGINS` to the Studio origin. Keep the service-role key exclusively in the backend.
 5. Configure Studio with `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `NEXT_PUBLIC_BACKEND_API_URL`. Android uses `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `API_BASE_URL` in ignored `local.properties`. All apps must refer to the same Supabase project.
 6. Sign in to Studio once. Edit the email in [approve_admin.sql](approve_admin.sql), run it in SQL Editor, then refresh Studio. A Google account alone grants no admin access.
-7. In Studio, open **Categories → Guess → Games → New game**. Create Animals with five questions and a timer, add images and accepted answers directly, then click **Save game questions** and **Publish game**. There is no level step. The category must also be published. See [the content and migration guide](../docs/admin-game-workflow.md).
+7. In Studio, open **Categories → Guess → Games → New game**. Create Animals with five questions and a timer, choose a library icon, then add images and reveal answers directly, then click **Save game questions** and **Publish game**. There is no level step. The category must also be published. See [the content and migration guide](../docs/admin-game-workflow.md).
 
 Upload game images through **Studio**, rather than manually through the Storage dashboard: Studio also creates the media metadata required by publication checks. `questions/` is created by uploading object paths; no manual folder setup is needed. Android uses the backend's temporary `image_url` and does not construct a public bucket URL. Recordings stay on the phone.
 
@@ -44,3 +44,13 @@ It adds game-wide prompt selection and fixes editing/removing published game
 questions. Saving changed assignments moves the game to draft and updates its
 question count. Re-publish after reviewing the saved selection. No image files,
 reusable questions or player progress are deleted by this upgrade.
+
+## Catalogue artwork upgrade
+
+If migrations 001–008 are already installed, run [upgrade_catalog_artwork.sql](sql-editor/upgrade_catalog_artwork.sql). Migration [009](migrations/202610260009_catalog_artwork.sql) adds optional artwork references to categories and games and extends their existing atomic RPCs. Existing published records and saved progress remain intact. Deploy the API and Studio after applying the SQL, then upload/select square icons on both records. Full setup/upgrade bundles also include 009.
+
+## Bundled icon library upgrade
+
+The default artwork picker now offers 45 bundled Phosphor duotone icons with search. Custom square image uploads remain available. Store a stable `icon_key` on each category/game; Android renders the same bundled vector offline. No Flaticon API, account, CDN request or upload is needed for library icons. The included MIT licence is shipped with Studio assets and Android.
+
+Run [upgrade_icon_library.sql](sql-editor/upgrade_icon_library.sql) if migrations 001–008 are installed. It includes 009 and 010, so it also works if 009 was already applied. Earlier projects should use the complete upgrade bundle. Apply SQL before deploying the API/Studio update. Neither migration changes content IDs or progress. Existing custom images remain selected.

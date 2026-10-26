@@ -8,7 +8,11 @@
   "overrides": {
     "@nestjs/swagger": {
       "js-yaml": "^5.4.3"
-    }
+    },
+    "@nestjs/platform-express": {
+      "multer": "^2.5.0"
+    },
+    "body-parser": "^2.4.0"
   },
   "scripts": {
     "dev": "concurrently -n backend,admin -c cyan,magenta \"npm run dev -w backend\" \"npm run dev -w admin\"",
@@ -17,7 +21,9 @@
     "sql:generate": "node supabase/build-sql.mjs",
     "sql:check": "node supabase/build-sql.mjs --check",
     "test:db": "npm run sql:check && node supabase/tests/run.mjs",
-    "lint": "npm run lint -w backend && npm run lint -w admin"
+    "lint": "npm run lint -w backend && npm run lint -w admin",
+    "icons:generate": "node scripts/build-catalog-icons.mjs",
+    "icons:check": "node scripts/build-catalog-icons.mjs --check"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
