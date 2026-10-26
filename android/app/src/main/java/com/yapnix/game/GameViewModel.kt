@@ -69,6 +69,8 @@ data class GameUiState(
     val availableUpdate: AppUpdate? = null,
     val dismissedUpdate: String? = null,
     val checkingUpdate: Boolean = false,
+    val updateError: String? = null,
+    val updatePromptRequested: Boolean = false,
 )
 
 private sealed interface ProgressWrite {
@@ -122,22 +124,28 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (mutableState.value.checkingUpdate) return
         val now = SystemClock.elapsedRealtime()
         if (!force && lastUpdateCheck > 0 && now - lastUpdateCheck < 15 * 60 * 1000L) return
-        mutableState.value = mutableState.value.copy(checkingUpdate = true)
+        mutableState.value = mutableState.value.copy(checkingUpdate = true, updateError = null)
         viewModelScope.launch {
             runCatching { AppUpdates.check(BuildConfig.VERSION_NAME) }
                 .onSuccess { update ->
                     lastUpdateCheck = SystemClock.elapsedRealtime()
-                    mutableState.value = mutableState.value.copy(availableUpdate = update, checkingUpdate = false,
+                    mutableState.value = mutableState.value.copy(availableUpdate = update, checkingUpdate = false, updateError = null,
                         dismissedUpdate = if (force) null else mutableState.value.dismissedUpdate)
                     if (force) showNotice(if (update == null) "You have the latest available version" else "Update ${update.version} is available")
                 }.onFailure {
                     if (it is CancellationException) throw it
-                    mutableState.value = mutableState.value.copy(checkingUpdate = false)
-                    if (force) showNotice("Could not check for updates. Try again when you’re online.")
+                    val message = when (it) {
+                        is java.net.UnknownHostException, is java.net.SocketTimeoutException -> "Cannot reach the update service. Check your connection or try again shortly."
+                        is java.io.IOException -> it.message ?: "The update service is unavailable. Please try again shortly."
+                        else -> "The update service is unavailable. Please try again shortly."
+                    }
+                    mutableState.value = mutableState.value.copy(checkingUpdate = false, updateError = message)
+                    if (force) showNotice(message)
                 }
         }
     }
-    fun dismissUpdate() { mutableState.value = mutableState.value.copy(dismissedUpdate = mutableState.value.availableUpdate?.version) }
+    fun showUpdate() { mutableState.value = mutableState.value.copy(dismissedUpdate = null, updatePromptRequested = true) }
+    fun dismissUpdate() { mutableState.value = mutableState.value.copy(dismissedUpdate = mutableState.value.availableUpdate?.version, updatePromptRequested = false) }
 
     fun refreshGames() {
         contentJob?.cancel()

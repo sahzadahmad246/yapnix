@@ -48,6 +48,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import com.yapnix.game.audio.RoundAudio
 import coil.compose.AsyncImage
+import com.yapnix.game.updates.ProfileUpdateCard
 import com.yapnix.game.updates.UpdatePanel
 import com.yapnix.game.data.Game
 import com.yapnix.game.recording.ReactionCamera
@@ -639,6 +640,8 @@ private fun ProfileScreen(state: GameUiState, viewModel: GameViewModel) {
         Spacer(Modifier.height(22.dp))
         AccountPanel(state, viewModel, showIdentity = false)
         Text("YOUR APP", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(top = 32.dp, bottom = 12.dp))
+        state.availableUpdate?.let { ProfileUpdateCard(it, viewModel::showUpdate) }
+        state.updateError?.let { Text(it, color = Muted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 12.dp)) }
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color.White)) {
             SettingsRow("film", "My videos", "Saved on this device", viewModel::openRecordings)
             HorizontalDivider(Modifier.padding(horizontal = 17.dp), color = Line)

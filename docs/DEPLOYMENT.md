@@ -147,7 +147,7 @@ keys or a Google client secret in the app.
    removes local app data, so export any recordings first.
 
 For later releases, increase `versionCode` and update `versionName` in
-`android/app/build.gradle.kts` before building. The current values are 8 / 0.7.1.
+`android/app/build.gradle.kts` before building. The current values are 9 / 0.7.2.
 An APK is directly installable; an AAB is intended for Google Play.
 
 ## 6. Publish the APK on GitHub Releases
@@ -210,3 +210,5 @@ Apply `upgrade_icon_library.sql` (requires 001–008) or the complete `upgrade_e
 Pushing to GitHub does not update an installed Android app. Each Android release must increment both version code and version name, build a release APK with the existing signing key, and publish an asset named exactly `yapnix-vX.Y.Z.apk` on the matching `vX.Y.Z` GitHub release. Keep its SHA-256 checksum alongside it. A draft release is not discoverable by the app. The current updater reads the releases list, including testing pre-releases.
 
 Installed v0.5.0 already downloads and verifies updates inside Yapnix, then opens Android’s installer for an in-place update. You → Check for updates bypasses the installed app’s automatic-check interval. The source’s shorter 15-minute interval and cache bypass take effect after updating to v0.6.0. Do not uninstall to update; uninstalling would remove local data.
+
+From v0.7.2, update discovery reads the public static `updates/android.properties` feed on GitHub raw content before falling back to the release API. Publish and verify the signed APK first, then update this feed with the exact tag, asset URL, byte size, SHA-256 and short newline-separated `whatsNew` notes. Never put a GitHub token in the app or public feed. Older installed versions require one in-place install of v0.7.2 to receive this checker.

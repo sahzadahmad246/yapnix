@@ -9,6 +9,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
@@ -43,7 +49,7 @@ fun UpdatePanel(viewModel: GameViewModel) {
     val download by downloads.state.collectAsStateWithLifecycle()
     val update = state.availableUpdate ?: return
     if (state.screen !in listOf(AppScreen.HOME, AppScreen.PROGRESS, AppScreen.RECORDINGS, AppScreen.PROFILE) ||
-        state.dismissedUpdate == update.version) return
+        (!state.updatePromptRequested && (state.screen == AppScreen.PROFILE || state.dismissedUpdate == update.version))) return
     val scope = rememberCoroutineScope()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var installAllowed by remember { mutableStateOf(context.packageManager.canRequestPackageInstalls()) }
@@ -78,6 +84,12 @@ fun UpdatePanel(viewModel: GameViewModel) {
                     UpdateStage.READY -> if (installAllowed) "Ready to install." else "Allow Yapnix to install this update in Android settings."
                     UpdateStage.FAILED -> download.message ?: "Download failed. Try again."
                 })
+                if (stage == UpdateStage.IDLE && update.releaseNotes.isNotBlank()) {
+                    Column(Modifier.heightIn(max = 180.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("What’s new", style = MaterialTheme.typography.titleSmall)
+                        UpdateNotes(update.releaseNotes)
+                    }
+                }
                 if (stage == UpdateStage.DOWNLOADING) {
                     if (download.totalBytes > 0) {
                         LinearProgressIndicator(progress = { (download.receivedBytes.toFloat() / download.totalBytes).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
@@ -121,4 +133,27 @@ fun UpdatePanel(viewModel: GameViewModel) {
             TextButton(enabled = !openingInstaller, onClick = close) { Text(if (working) "Cancel download" else "Later") }
         },
     )
+}
+
+@Composable
+private fun UpdateNotes(notes: String) {
+    notes.lineSequence().filter { it.isNotBlank() }.forEach { line ->
+        Text("• ${line.removePrefix("- ").removePrefix("• ")}", style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+fun ProfileUpdateCard(update: AppUpdate, onUpdate: () -> Unit) {
+    Card(Modifier.fillMaxWidth().padding(bottom = 16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("UPDATE AVAILABLE", style = MaterialTheme.typography.labelSmall)
+            Text("Yapnix ${update.version.removePrefix("v")}", style = MaterialTheme.typography.titleLarge)
+            if (update.releaseNotes.isNotBlank()) {
+                Text("What’s new", style = MaterialTheme.typography.titleSmall)
+                UpdateNotes(update.releaseNotes)
+            } else Text("A new version of Yapnix is ready to install.")
+            Button(onClick = onUpdate, modifier = Modifier.fillMaxWidth()) { Text("Update now") }
+            Text("Your videos and progress stay on this device.", style = MaterialTheme.typography.bodySmall)
+        }
+    }
 }
