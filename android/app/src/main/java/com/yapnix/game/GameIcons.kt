@@ -11,6 +11,7 @@ import androidx.compose.ui.res.painterResource
 @Composable
 internal fun GameIcon(name: String, modifier: Modifier = Modifier, tint: Color = LocalContentColor.current, description: String? = null) {
     val resource = when (name) {
+        "help" -> R.drawable.game_help
         "play" -> R.drawable.game_play
         "arrow" -> R.drawable.game_arrow
         "chevron" -> R.drawable.game_chevron

@@ -147,7 +147,7 @@ keys or a Google client secret in the app.
    removes local app data, so export any recordings first.
 
 For later releases, increase `versionCode` and update `versionName` in
-`android/app/build.gradle.kts` before building. The current values are 7 / 0.6.0.
+`android/app/build.gradle.kts` before building. The current values are 8 / 0.7.1.
 An APK is directly installable; an AAB is intended for Google Play.
 
 ## 6. Publish the APK on GitHub Releases

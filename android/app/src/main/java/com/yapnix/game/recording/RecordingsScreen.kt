@@ -1,5 +1,7 @@
 package com.yapnix.game.recording
 
+import android.annotation.SuppressLint
+
 import android.content.ClipData
 import android.content.Intent
 import android.graphics.Bitmap
@@ -288,6 +290,8 @@ private class ClipThumbnailCache {
     }
 }
 
+// Compose lint misses the producer value assignment with this Kotlin/compiler combination.
+@SuppressLint("ProduceStateDoesNotAssignValue")
 @Composable
 private fun RecordingTile(
     clip: LocalClip,
@@ -345,6 +349,8 @@ private fun ReelMenuAction(icon: String, text: String, onClick: () -> Unit, colo
         leadingIcon = { GameIcon(icon, Modifier.size(20.dp), color) })
 }
 
+// The successful URI result below assigns value; cancellation is deliberately propagated.
+@SuppressLint("ProduceStateDoesNotAssignValue")
 @Composable
 private fun RecordingPreview(clip: LocalClip, store: RecordingStore, onClose: () -> Unit, onError: () -> Unit) {
     var video by remember(clip.key) { mutableStateOf<VideoView?>(null) }
